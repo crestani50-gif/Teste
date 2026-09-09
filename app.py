@@ -358,7 +358,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
 
     quarantined_payout_exposure = {}
 
-    # 1. Payouts
+    # 1. Payouts (com suporte explícito a Payouts Positivos e Negativos/Débitos)
     payout_events = [r for r in s_valid if r['type'] == 'payout']
     for p in payout_events:
         pid = p['payout_id']
@@ -366,7 +366,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         p_date = p['date']
 
         if pid in parser.quarantined_tokens:
-            # O crédito bancário omitido no razão é o valor líquido do payout em trânsito
             quarantined_payout_exposure[pid] = expected_net
             detections.append({
                 "categoria": "Dados em Quarentena", "status": "INCONCLUSIVE",
@@ -375,11 +374,22 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             })
             continue
 
+        # Na Stripe, saldo devedor do lote gera Payout com net positivo (débito bancário)
+        is_negative_payout = (p['net'] > Decimal("0.00"))
+        expected_credit = Decimal("0.00") if is_negative_payout else expected_net
+        expected_debit = expected_net if is_negative_payout else Decimal("0.00")
+
         matches = [q for q in q_valid if not q['reconciled'] and 'Transfer' in q['type'] and match_exact_token(q['memo'], pid)]
         match_type = "token"
 
         if not matches:
-            candidates = [q for q in q_valid if not q['reconciled'] and 'Transfer' in q['type'] and q['credit'] == expected_net]
+            candidates = [
+                q for q in q_valid 
+                if not q['reconciled'] and 'Transfer' in q['type'] and (
+                    (is_negative_payout and q['debit'] == expected_net) or 
+                    (not is_negative_payout and q['credit'] == expected_net)
+                )
+            ]
             if p_date:
                 window_candidates = [q for q in candidates if q['date'] and 0 <= (q['date'] - p_date).days <= SETTLEMENT_WINDOW_DAYS]
                 if len(window_candidates) == 1:
@@ -389,27 +399,33 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         if not matches:
             detections.append({
                 "categoria": "Missing Payout", "status": "CONFIRMED",
-                "documento": pid, "impacto": expected_net, "exposure": Decimal("0.00"), "sinal": "+",
+                "documento": pid, "impacto": expected_net, "exposure": Decimal("0.00"), "sinal": "+" if not is_negative_payout else "-",
                 "descricao": f"Payout {pid} (${expected_net:,.2f}) não escriturado no razão."
             })
         elif len(matches) > 1 and match_type == "token":
             for m in matches[1:]:
                 m['reconciled'] = True
+                m_impact = m['debit'] if m['debit'] > Decimal("0.00") else m['credit']
+                m_sign = "+" if m['debit'] > Decimal("0.00") else "-"
                 detections.append({
                     "categoria": "Duplicidade de Transferência", "status": "CONFIRMED",
-                    "documento": str(m["num"]), "impacto": (Decimal(str(m["debit"])) if Decimal(str(m.get("debit", 0))) > 0 else Decimal(str(m["credit"]))), "exposure": Decimal("0.00"), "sinal": ("+" if Decimal(str(m.get("debit", 0))) > 0 else "-"),
-                    "descricao": f"Payout {pid} lançado em duplicidade no QBO ({m['num']}). Crédito duplicado de ${m['credit']:,.2f}."
+                    "documento": str(m["num"]), "impacto": m_impact, "exposure": Decimal("0.00"), "sinal": m_sign,
+                    "descricao": f"Payout {pid} lançado em duplicidade no QBO ({m['num']})."
                 })
             matches[0]['reconciled'] = True
         else:
             m = matches[0]
             m['reconciled'] = True
-            diff = m['credit'] - expected_net
+            # Diferença contábil real considerando o sentido de Débito vs Crédito
+            actual_effect = m['debit'] - m['credit']
+            expected_effect = expected_debit - expected_credit
+            diff = actual_effect - expected_effect
+
             if diff != Decimal("0.00"):
                 detections.append({
                     "categoria": "Erro de Valor / Digitação", "status": "CONFIRMED",
-                    "documento": str(m["num"]), "impacto": abs(diff), "exposure": Decimal("0.00"), "sinal": "-" if diff > 0 else "+",
-                    "descricao": f"Payout {pid} lançado com ${m['credit']:,.2f} (esperado: ${expected_net:,.2f}). Diferença de ${diff:,.2f}."
+                    "documento": str(m["num"]), "impacto": abs(diff), "exposure": Decimal("0.00"), "sinal": "+" if diff > 0 else "-",
+                    "descricao": f"Payout {pid} com divergência no razão: efeito registrado ${actual_effect:,.2f} vs esperado ${expected_effect:,.2f}."
                 })
             if m['date'] and p_date:
                 delay = (m['date'] - p_date).days
@@ -420,7 +436,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                         "descricao": f"Payout {pid} emitido em {p_date} mas registrado no banco em {m['date']} (+{delay} dias)."
                     })
 
-    # 2. Taxas por lote
+    # 2. Taxas por lote liquidado
     payout_ids = sorted(list(set(r['payout_id'] for r in s_valid if r['payout_id'] and r['payout_id'] != "unsettled")))
     unbooked_payout_fees = {}
 
@@ -457,6 +473,31 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "documento": f"Taxas {pid}", "impacto": fee_amt, "exposure": Decimal("0.00"), "sinal": "+",
                     "descricao": f"Taxas Stripe de ${fee_amt:,.2f} para o lote {pid} ausentes no razão."
                 })
+
+    # 2.1 Reconciliação de taxas unsettled / provisionadas de competência
+    unsettled_fees = abs(sum(r['fee'] for r in s_valid if (not r.get('payout_id') or r.get('payout_id') == "unsettled") and r.get('type') != 'payout'))
+    if unsettled_fees > Decimal("0.00"):
+        unsettled_matches = [
+            q for q in q_valid 
+            if not q['reconciled'] and 'Journal Entry' in q['type'] and ('unsettled' in q['memo'].lower() or q['credit'] == unsettled_fees)
+        ]
+        if unsettled_matches:
+            sum_unsettled = sum(m['credit'] for m in unsettled_matches)
+            for m in unsettled_matches:
+                m['reconciled'] = True
+            if sum_unsettled != unsettled_fees:
+                diff_u = sum_unsettled - unsettled_fees
+                detections.append({
+                    "categoria": "Taxas Divergentes", "status": "CONFIRMED",
+                    "documento": "Taxas unsettled", "impacto": abs(diff_u), "exposure": Decimal("0.00"), "sinal": "-" if diff_u > 0 else "+",
+                    "descricao": f"Taxas unsettled: QBO=${sum_unsettled:,.2f} vs Stripe=${unsettled_fees:,.2f}."
+                })
+        else:
+            detections.append({
+                "categoria": "Taxas Não Escrituradas", "status": "CONFIRMED",
+                "documento": "Taxas unsettled", "impacto": unsettled_fees, "exposure": Decimal("0.00"), "sinal": "+",
+                "descricao": f"Taxas Stripe de ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) ausentes no razão."
+            })
 
     # 3. Reembolsos
     for r in [x for x in s_valid if x['type'] == 'refund']:
@@ -571,8 +612,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         })
 
     # Fechamento Contábil de 4 Estados
-    # A equação equaliza: Saldo Atual do QBO - Quarentena = Saldo Stripe Esperado
-    # Créditos duplicados ou excessivos no QBO diminuíram o saldo; para equalizar, o desvio é deduzido
     net_explained = Decimal("0.00")
     for d_item in detections:
         if d_item['status'] == "CONFIRMED":
@@ -582,7 +621,11 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             elif d_item['sinal'] == "-":
                 net_explained -= mag
 
+    # 1. Saldo Líquido Observado no QBO
     total_qbo_net = sum(r['debit'] - r['credit'] for r in q_valid)
+
+    # 2. Saldo Líquido Esperado na Stripe (Fonte da Verdade Primária)
+    total_stripe_net = sum(Decimal(str(x.get('net', Decimal('0.00')))) for x in s_valid)
 
     # Reconstrução determinística do capital sob quarentena
     quarantined_exposure = Decimal("0.00")
@@ -608,13 +651,12 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 d_item["exposure"] = quarantined_exposure
                 d_item["descricao"] = f"Payout {d_item['documento']} com linha corrompida isolada em quarentena no razão. Exposição nominal líquida de ${quarantined_exposure:,.2f}."
 
-    # Proof State Tripartite
-    # Equação Tripartite: QBO Balance + Net Explained - Quarantined Exposure
-    # net_explained negativo significa que o QBO tem mais créditos espúrios que débitos faltantes
-    # Para anular a duplicidade (277.14) e o erro de valor (200.00), o resíduo se equaliza:
-    unexplained_residual = (total_qbo_net - net_explained) - quarantined_exposure
-    if abs(unexplained_residual) < Decimal("0.01"):
-        unexplained_residual = Decimal("0.00")
+    # Proof State Tripartite:
+    # Delta Real dos Livros = (QBO Net - Stripe Net)
+    # Resíduo U = Delta Real - Desvios Explicados - Quarentena
+    delta_b = total_qbo_net - total_stripe_net
+    unexplained_residual = (delta_b - net_explained) - quarantined_exposure
+
     if abs(unexplained_residual) < Decimal("0.01"):
         unexplained_residual = Decimal("0.00")
 
@@ -629,6 +671,8 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         "quarantined_exposure": quarantined_exposure,
         "quarantined_amount": quarantined_exposure,
         "qbo_balance": total_qbo_net,
+        "stripe_balance": total_stripe_net,
+        "delta_balance": delta_b,
         "confirmed_discrepancies": net_explained,
         "net_explained": net_explained,
         "unexplained_residual": unexplained_residual,
@@ -773,6 +817,20 @@ def build_chronological_universe(seed=42):
         })
         doc_id += 1
 
+    # Provisão contábil de competência: Taxas de transações não liquidadas até a data de corte
+    unsettled_fees = abs(sum(e['fee'] for e in events if e['payout_id'] is None))
+    if unsettled_fees > Decimal("0.00"):
+        last_date = max(e['created_date'] for e in events)
+        qbo_perfect.append({
+            'Date': str(last_date),
+            'Transaction Type': 'Journal Entry',
+            'Num': f"FEE-{doc_id}",
+            'Memo/Description': "Taxas Stripe provisionadas (unsettled)",
+            'Debit': "0.00",
+            'Credit': str(unsettled_fees)
+        })
+        doc_id += 1
+
     return stripe_df, qbo_perfect, dict(zip(payout_ids, payout_schedule)), events
 
 def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
@@ -833,7 +891,6 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 dup['Num'] = f"{row['Num']}-DUP"
                 d_val = Decimal(str(row.get('Debit', '0.00')))
                 c_val = Decimal(str(row.get('Credit', '0.00')))
-                # Se a duplicidade é de um Débito, delta é +d_val; se de Crédito, é -c_val
                 delta_val = d_val if d_val > 0 else -c_val
                 qbo_corrupted.append(dup)
                 ground_truth.append({
@@ -907,9 +964,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
     if "CORRUPTED_ENTRY" in active:
         for row in qbo_corrupted:
             if "Transferência Payout po_week_3" in row['Memo/Description']:
-                # O crédito original do payout no QBO é o valor líquido da transferência
                 exp_val = Decimal(str(row['Credit'])) if str(row['Credit']).replace('.', '', 1).isdigit() else Decimal("0.00")
-                # Se row['Credit'] veio como bruto (5324), o líquido é 5014
                 row['Credit'] = "CORRUPTED_VAL_ERR"
                 ground_truth.append({
                     "anomaly_id": "QUAR_A9", "target_id": "po_week_3",
