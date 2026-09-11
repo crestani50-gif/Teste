@@ -1216,7 +1216,7 @@ def run_app():
             user_email = st.text_input(
                 "Work Email (for audit trail and report logging):",
                 placeholder="controller@company.com",
-                help="Sua cota gratuita da direito a 2 auditorias mensais completas."
+                help="Complimentary tier includes 2 full ledger reconciliation audits per month."
             )
         with col_em2:
             st.caption("🔒 Tier: 2 complimentary audits / mo")
@@ -1224,7 +1224,7 @@ def run_app():
         st.markdown('''
         > ⚖️ **Notice of Advisory Scope & CPA Verification:**  
         > This software operates as an assistive analytical engine for detecting ledger discrepancies and financial variances.  
-        > **Recommended Action — Subject to CPA/Accountant Review:** This diagnostic suite provides analytical discrepancy mapping. **Recommended Action — Subject to CPA/Accountant Review**: Proposed adjusting journal entries and diagnostic findings do not constitute formal tax, legal, or licensed audit advice. All adjustments must be ratified by an authorized corporate controller or CPA.
+        > **Recommended Action — Subject to CPA/Accountant Review:** Proposed adjusting journal entries and diagnostic findings do not constitute formal tax, legal, or licensed audit advice. All adjustments must be ratified by an authorized corporate controller or CPA.
         ''')
         
         terms_accepted = st.checkbox(
