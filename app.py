@@ -1196,7 +1196,7 @@ def run_app():
     st.title("Stripe to QuickBooks Online Forensic Reconciliation Engine")
     st.caption("Automated bipartite ledger variance analysis for month-end close and audit readiness.")
 
-    tab_app, tab_lab = st.tabs(["🚀 Diagnostic Finding de Fechamento", "🔬 Bancada Científica (Monte Carlo)"])
+    tab_app, tab_lab = st.tabs(["🚀 Close Diagnostic", "🔬 Scientific Benchmark (Monte Carlo)"])
 
     with tab_app:
         if "stripe_data" not in st.session_state:
@@ -1333,7 +1333,7 @@ def run_app():
                     col_cta, _ = st.columns([2, 3])
                     with col_cta:
                         email_lead = st.text_input("Controller / Reviewer Email for Audit Trail:", key="lead_email_input")
-                        if st.button("Solicitar Relatório Estruturado"):
+                        if st.button("Request Structured Audit Report"):
                             if email_lead and "@" in email_lead and "." in email_lead:
                                 if save_lead(email_lead):
                                     st.success("Solicitação confirmada! O relatório de conciliação foi preparado.")
@@ -1343,13 +1343,13 @@ def run_app():
                                 st.warning("Por favor, insira um e-mail válido.")
 
     with tab_lab:
-        st.markdown("Ambiente de validação formal por simulação estocástica contra Ground Truth conhecido.")
+        st.markdown("Formal validation environment via stochastic simulation against known Ground Truth.")
         col_bench1, col_bench2 = st.columns(2)
 
         with col_bench1:
-            st.subheader("Execução Forense Individual")
-            seed_input = st.number_input("Semente Cronológica (Seed):", min_value=1, max_value=99999, value=42, key="seed_num")
-            if st.button("🧪 Reconciliar Fechamento Canônico", type="primary", key="btn_run_seed"):
+            st.subheader("Deterministic Benchmark Run")
+            seed_input = st.number_input("Random Seed:", min_value=1, max_value=99999, value=42, key="seed_num")
+            if st.button("🧪 Reconcile Benchmark Scenario", type="primary", key="btn_run_seed"):
                 s_df, q_perf, p_dates, _ = build_chronological_universe(seed=seed_input)
                 rng = random.Random(seed_input)
                 q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
@@ -1358,9 +1358,9 @@ def run_app():
                 st.session_state["v5_single"] = {"res": res_single, "gt": gt, "met": met_single}
 
         with col_bench2:
-            st.subheader("Bateria de Estresse Monte Carlo")
-            mc_runs = st.slider("Número de Fechamentos Independentes:", min_value=10, max_value=100, value=30, step=5, key="slider_mc")
-            if st.button(f"⚡ Executar Simulação Monte Carlo ({mc_runs} Rodadas)", key="btn_run_mc"):
+            st.subheader("Monte Carlo Stress Test Suite")
+            mc_runs = st.slider("Independent Accounting Closes:", min_value=10, max_value=100, value=30, step=5, key="slider_mc")
+            if st.button(f"⚡ Execute Monte Carlo Simulation ({mc_runs} Rodadas)", key="btn_run_mc"):
                 mc_results = []
                 progress = st.progress(0)
                 for run_idx in range(mc_runs):
