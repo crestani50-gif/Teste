@@ -1193,8 +1193,9 @@ def evaluate_bipartite_forensic_metrics(detections, ground_truth):
 
 def run_app():
     
-    st.title("Stripe to QuickBooks Online Forensic Reconciliation Engine")
-    st.caption("Automated bipartite ledger variance analysis for month-end close and audit readiness.")
+    st.title("Stripe × QuickBooks Online")
+    st.subheader("Forensic Reconciliation")
+    st.caption("Find and explain ledger discrepancies before month-end close.")
 
     tab_app, tab_lab = st.tabs(["🚀 Close Diagnostic", "🔬 Scientific Benchmark (Monte Carlo)"])
 
@@ -1209,7 +1210,7 @@ def run_app():
             st.session_state["audit_authorized"] = False
 
         # --- PORTÃO DE ENTRADA, CONTROLE DE ACESSO & ISENÇÃO JURÍDICA ---
-        st.markdown("### 0. Compliance & Workstation Authentication")
+        st.markdown("### 0. Audit Setup")
         
         col_em1, col_em2 = st.columns([2, 1])
         with col_em1:
@@ -1219,7 +1220,7 @@ def run_app():
                 help="Complimentary tier includes 2 full ledger reconciliation audits per month."
             )
         with col_em2:
-            st.caption("🔒 Tier: 2 complimentary audits / mo")
+            st.caption("🔒 Free tier: 2 audits / month")
         
         st.markdown('''
         > ⚖️ **Notice of Advisory Scope & Professional Review:**  
@@ -1229,7 +1230,7 @@ def run_app():
         ''')
         
         terms_accepted = st.checkbox(
-            "I understand this tool provides assistive diagnostic analysis and that all findings and proposed adjustments require review by a qualified accounting professional prior to posting.",
+            "I understand that this tool provides assistive diagnostic analysis and that all findings and proposed adjustments require review by a qualified accounting professional before posting.",
             value=False
         )
         
@@ -1238,8 +1239,8 @@ def run_app():
         st.subheader("1. Ledger Data Ingestion")
         uploaded_stripe = st.file_uploader("Stripe Balance History CSV (Standard Export)", type=["csv"], key="stripe_uploader")
         uploaded_qbo = st.file_uploader("QuickBooks Online Stripe Clearing Ledger CSV", type=["csv"], key="qbo_uploader")
-        st.caption("🔒 **Data Privacy & Ephemeral Processing:** Uploaded files are parsed in-memory in volatile RAM. No client financial data or CSV records are stored, written to disk, or retained beyond the active browser session.")
-        
+        st.caption("🔒 **No Persistent File Storage:** Uploaded CSV files are processed in memory and are not intentionally stored in databases or persistent file storage.")
+                
         if st.button("Load Canonical Audit Benchmark (Demo Dataset)", key="btn_load_canonical"):
             s_mock, q_mock = generate_canonical_demo_data()
             st.session_state["stripe_data"] = s_mock
