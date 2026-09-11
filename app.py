@@ -1222,13 +1222,14 @@ def run_app():
             st.caption("🔒 Tier: 2 complimentary audits / mo")
         
         st.markdown('''
-        > ⚖️ **Notice of Advisory Scope & CPA Verification:**  
-        > This software operates as an assistive analytical engine for detecting ledger discrepancies and financial variances.  
-        > **Recommended Action — Subject to CPA/Accountant Review:** Proposed adjusting journal entries and diagnostic findings do not constitute formal tax, legal, or licensed audit advice. All adjustments must be ratified by an authorized corporate controller or CPA.
+        > ⚖️ **Notice of Advisory Scope & Professional Review:**  
+        > This software is an assistive analytical tool designed to identify potential discrepancies, variances, and reconciliation issues between financial records.  
+        > **Recommended Action — Subject to Professional Review:** Diagnostic findings and proposed adjusting journal entries are provided for informational and operational purposes only. They do not constitute tax, legal, accounting, audit, or other licensed professional advice.  
+        > Users are responsible for reviewing and validating all findings and proposed adjustments with their qualified accounting or authorized financial professional before posting or relying on them. The software does not independently determine legal, tax, or accounting obligations and does not replace professional review.
         ''')
         
         terms_accepted = st.checkbox(
-            "I acknowledge this tool operates as an assistive diagnostic parser and all recommended adjustments remain subject to licensed CPA review.",
+            "I understand this tool provides assistive diagnostic analysis and that all findings and proposed adjustments require review by a qualified accounting professional prior to posting.",
             value=False
         )
         
@@ -1237,6 +1238,7 @@ def run_app():
         st.subheader("1. Ledger Data Ingestion")
         uploaded_stripe = st.file_uploader("Stripe Balance History CSV (Standard Export)", type=["csv"], key="stripe_uploader")
         uploaded_qbo = st.file_uploader("QuickBooks Online Stripe Clearing Ledger CSV", type=["csv"], key="qbo_uploader")
+        st.caption("🔒 **Data Privacy & Ephemeral Processing:** Uploaded files are parsed in-memory in volatile RAM. No client financial data or CSV records are stored, written to disk, or retained beyond the active browser session.")
         
         if st.button("Load Canonical Audit Benchmark (Demo Dataset)", key="btn_load_canonical"):
             s_mock, q_mock = generate_canonical_demo_data()
@@ -1328,6 +1330,7 @@ def run_app():
 
                     st.markdown("---")
                     st.subheader("5. Adjusting Journal Entries & CPA Workpapers")
+                    st.info("⚠️ **Professional Review Required:** The following entries are evidence-based diagnostic recommendations generated from your uploaded records. Review and approve them with your qualified accounting professional before posting into QuickBooks Online.")
                     st.info("💡 Export certified workpapers to post adjusting journal entries directly into QuickBooks Online:")
                     
                     col_cta, _ = st.columns([2, 3])
@@ -1336,9 +1339,9 @@ def run_app():
                         if st.button("Request Structured Audit Report"):
                             if email_lead and "@" in email_lead and "." in email_lead:
                                 if save_lead(email_lead):
-                                    st.success("Solicitação confirmada! O relatório de conciliação foi preparado.")
+                                    st.success("Request confirmed! The audit workpaper package has been generated.")
                                 else:
-                                    st.error("Erro temporário ao registrar solicitação. Tente novamente.")
+                                    st.error("Temporary error recording audit request. Please retry.")
                             else:
                                 st.warning("Por favor, insira um e-mail válido.")
 
