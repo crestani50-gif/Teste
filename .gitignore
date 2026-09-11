@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+usage_ledger.json
+leads_interessados.txt
+dirty_stripe_raw.csv
+dirty_qbo_raw.csv
+testes_sujos.zip
+.streamlit/secrets.toml
