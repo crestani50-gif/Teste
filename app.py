@@ -1316,11 +1316,11 @@ def run_app():
                     m4.metric("Unaccounted Residual Variance", f"${res['unexplained_residual']:,.2f}")
 
                     if res['audit_status'] == "CLEAN":
-                        st.success("✅ **Status Contábil:** Saldo integralmente conciliado e fechado sem resíduos.")
+                        st.success("✅ **Reconciliation Status:** Saldo integralmente conciliado e fechado sem resíduos.")
                     elif res['audit_status'] == "INCONCLUSIVE":
-                        st.info("ℹ️ **Status Contábil:** Saldo fechado matematicamente, mas parecer condicionado à auditoria manual dos itens em quarentena.")
+                        st.info("ℹ️ **Reconciliation Status:** Saldo fechado matematicamente, mas parecer condicionado à auditoria manual dos itens em quarentena.")
                     else:
-                        st.error("⚠️ **Status Contábil:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
+                        st.error("⚠️ **Reconciliation Status:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
 
                     st.markdown("---")
                     st.subheader(f"4. Itemized Forensic Discrepancies ({len(res['detections'])} itens)")
