@@ -1161,19 +1161,43 @@ def run_app():
         if "audit_authorized" not in st.session_state:
             st.session_state["audit_authorized"] = False
 
-        col_up1, col_up2 = st.columns(2)
-        with col_up1:
-            st.subheader("1. Arquivos de Entrada")
-            uploaded_stripe = st.file_uploader("Arquivo Stripe Balance History (.csv)", type=["csv"], key="stripe_uploader")
-            uploaded_qbo = st.file_uploader("Razão Stripe Clearing do QBO (.csv)", type=["csv"], key="qbo_uploader")
-
-            if st.button("🧪 Carregar Dados de Exemplo (Cenário Demonstrativo)", key="btn_load_canonical"):
-                s_mock, q_mock = generate_canonical_demo_data()
-                st.session_state["stripe_data"] = s_mock
-                st.session_state["qbo_data"] = q_mock
-                st.session_state["is_demo"] = True
-                st.session_state["audit_authorized"] = True
-                st.success("Cenário demonstrativo com 7 inconsistências carregado (Uso Ilimitado)!")
+        # --- PORTÃO DE ENTRADA, CONTROLE DE ACESSO & ISENÇÃO JURÍDICA ---
+        st.markdown("### 0. Identificação & Isenção de Responsabilidade")
+        
+        col_em1, col_em2 = st.columns([2, 1])
+        with col_em1:
+            user_email = st.text_input(
+                "E-mail profissional para emissao do relatorio auditavel:",
+                placeholder="contador@suaempresa.com",
+                help="Sua cota gratuita da direito a 2 auditorias mensais completas."
+            )
+        with col_em2:
+            st.caption("🔒 Cota: 2 auditorias gratuitas / mes")
+        
+        st.markdown('''
+        > ⚖️ **Aviso Legal & Termos de Uso (Instrumento Assistivo):**  
+        > Este software opera como motor analítico de suporte à identificação de inconsistências financeiras.  
+        > **Recommended Action — Subject to CPA/Accountant Review:** Os apontamentos e sugestões de partidas dobradas (Débito/Crédito) gerados pela ferramenta não constituem parecer contábil formal, auditoria fiscal ou recomendação tributária. A validação e inclusão no razão geral competem exclusivamente ao profissional contábil habilitado.
+        ''')
+        
+        terms_accepted = st.checkbox(
+            "Declaro que compreendo a natureza assistiva da ferramenta e que qualquer ajuste contábil sugerido está sujeito à revisão técnica do responsável contábil.",
+            value=False
+        )
+        
+        st.divider()
+        
+        st.subheader("1. Arquivos de Entrada")
+        uploaded_stripe = st.file_uploader("Arquivo Stripe Balance History (.csv)", type=["csv"], key="stripe_uploader")
+        uploaded_qbo = st.file_uploader("Razão Stripe Clearing do QBO (.csv)", type=["csv"], key="qbo_uploader")
+        
+        if st.button("🧪 Carregar Dados de Exemplo (Cenário Demonstrativo)", key="btn_load_canonical"):
+            s_mock, q_mock = generate_canonical_demo_data()
+            st.session_state["stripe_data"] = s_mock
+            st.session_state["qbo_data"] = q_mock
+            st.session_state["is_demo"] = True
+            st.session_state["audit_authorized"] = True
+            st.success("Cenário demonstrativo com 7 inconsistências carregado (Uso Ilimitado)!")
 
         if uploaded_stripe and uploaded_qbo:
             try:
