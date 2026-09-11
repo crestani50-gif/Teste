@@ -1,6 +1,8 @@
 import sys
 import os
 import re
+import io
+import csv
 import random
 import urllib.request
 import json
@@ -8,6 +10,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import pandas as pd
 import streamlit as st
+
+# Módulo de governança e limite de cotas
+try:
+    from usage_guard import check_and_increment_usage
+except ImportError:
+    # Fallback defensivo caso o módulo ainda não tenha sido criado
+    def check_and_increment_usage(email: str):
+        return True, 1, "Auditoria liberada (modo sem persistência de cotas)."
 
 SETTLEMENT_WINDOW_DAYS = 4
 
@@ -19,6 +29,38 @@ def match_exact_token(text, token):
         return False
     pattern = rf"(?<![a-zA-Z0-9_]){re.escape(str(token))}(?![a-zA-Z0-9_])"
     return bool(re.search(pattern, str(text), re.IGNORECASE))
+
+def robust_read_csv(uploaded_file):
+    """
+    Lê CSVs reais com tolerância a múltiplos encodings e delimitadores,
+    removendo espaços em branco dos cabeçalhos.
+    """
+    bytes_data = uploaded_file.read()
+    uploaded_file.seek(0)
+    
+    encodings_to_try = ["utf-8-sig", "utf-8", "latin1", "cp1252"]
+    text_content = None
+
+    for enc in encodings_to_try:
+        try:
+            text_content = bytes_data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if text_content is None:
+        raise ValueError("Não foi possível decodificar o arquivo. Formato de texto incompatível.")
+
+    sample = text_content[:2048]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=[',', ';', '\t'])
+        sep = dialect.delimiter
+    except Exception:
+        sep = ','
+
+    df = pd.read_csv(io.StringIO(text_content), sep=sep, dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
 
 # --- 1. PERSISTÊNCIA VERIFICADA DE LEADS ---
 
@@ -358,7 +400,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
 
     quarantined_payout_exposure = {}
 
-    # 1. Payouts (com suporte explícito a Payouts Positivos e Negativos/Débitos)
+    # 1. Payouts (com suporte a Payouts a Débito/Negativos)
     payout_events = [r for r in s_valid if r['type'] == 'payout']
     for p in payout_events:
         pid = p['payout_id']
@@ -374,7 +416,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             })
             continue
 
-        # Na Stripe, saldo devedor do lote gera Payout com net positivo (débito bancário)
         is_negative_payout = (p['net'] > Decimal("0.00"))
         expected_credit = Decimal("0.00") if is_negative_payout else expected_net
         expected_debit = expected_net if is_negative_payout else Decimal("0.00")
@@ -416,7 +457,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         else:
             m = matches[0]
             m['reconciled'] = True
-            # Diferença contábil real considerando o sentido de Débito vs Crédito
             actual_effect = m['debit'] - m['credit']
             expected_effect = expected_debit - expected_credit
             diff = actual_effect - expected_effect
@@ -474,7 +514,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Taxas Stripe de ${fee_amt:,.2f} para o lote {pid} ausentes no razão."
                 })
 
-    # 2.1 Reconciliação de taxas unsettled / provisionadas de competência
+    # 2.1 Reconciliação de taxas unsettled / provisionadas
     unsettled_fees = abs(sum(r['fee'] for r in s_valid if (not r.get('payout_id') or r.get('payout_id') == "unsettled") and r.get('type') != 'payout'))
     if unsettled_fees > Decimal("0.00"):
         unsettled_matches = [
@@ -627,7 +667,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
     # 2. Saldo Líquido Esperado na Stripe (Fonte da Verdade Primária)
     total_stripe_net = sum(Decimal(str(x.get('net', Decimal('0.00')))) for x in s_valid)
 
-    # Reconstrução determinística do capital sob quarentena
     quarantined_exposure = Decimal("0.00")
     if len(parser.quarantine) > 0:
         for q_item in parser.quarantine:
@@ -651,9 +690,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 d_item["exposure"] = quarantined_exposure
                 d_item["descricao"] = f"Payout {d_item['documento']} com linha corrompida isolada em quarentena no razão. Exposição nominal líquida de ${quarantined_exposure:,.2f}."
 
-    # Proof State Tripartite:
-    # Delta Real dos Livros = (QBO Net - Stripe Net)
-    # Resíduo U = Delta Real - Desvios Explicados - Quarentena
     delta_b = total_qbo_net - total_stripe_net
     unexplained_residual = (delta_b - net_explained) - quarantined_exposure
 
@@ -817,7 +853,6 @@ def build_chronological_universe(seed=42):
         })
         doc_id += 1
 
-    # Provisão contábil de competência: Taxas de transações não liquidadas até a data de corte
     unsettled_fees = abs(sum(e['fee'] for e in events if e['payout_id'] is None))
     if unsettled_fees > Decimal("0.00"):
         last_date = max(e['created_date'] for e in events)
@@ -1112,7 +1147,7 @@ def evaluate_bipartite_forensic_metrics(detections, ground_truth):
 def run_app():
     st.set_page_config(page_title="Stripe – QBO Diagnostic Auditor", page_icon="🔍", layout="wide")
     st.title("🔍 Stripe – QBO Close Diagnostic")
-    st.caption("Auditor read-only para diagnóstico de inconsistências entre Stripe e QuickBooks Online")
+    st.caption("Auditor forense de conciliação para identificação de inconsistências contábeis")
 
     tab_app, tab_lab = st.tabs(["🚀 Diagnóstico de Fechamento", "🔬 Bancada Científica (Monte Carlo)"])
 
@@ -1121,6 +1156,10 @@ def run_app():
             st.session_state["stripe_data"] = None
         if "qbo_data" not in st.session_state:
             st.session_state["qbo_data"] = None
+        if "is_demo" not in st.session_state:
+            st.session_state["is_demo"] = False
+        if "audit_authorized" not in st.session_state:
+            st.session_state["audit_authorized"] = False
 
         col_up1, col_up2 = st.columns(2)
         with col_up1:
@@ -1132,80 +1171,105 @@ def run_app():
                 s_mock, q_mock = generate_canonical_demo_data()
                 st.session_state["stripe_data"] = s_mock
                 st.session_state["qbo_data"] = q_mock
-                st.success("Cenário demonstrativo com 7 inconsistências simuladas carregado em memória!")
+                st.session_state["is_demo"] = True
+                st.session_state["audit_authorized"] = True
+                st.success("Cenário demonstrativo com 7 inconsistências carregado (Uso Ilimitado)!")
 
         if uploaded_stripe and uploaded_qbo:
             try:
-                s_raw = pd.read_csv(uploaded_stripe)
-                q_raw = pd.read_csv(uploaded_qbo)
+                s_raw = robust_read_csv(uploaded_stripe)
+                q_raw = robust_read_csv(uploaded_qbo)
                 valid, msg = validate_schemas(s_raw, q_raw)
                 if valid:
                     st.session_state["stripe_data"] = s_raw
                     st.session_state["qbo_data"] = q_raw
+                    st.session_state["is_demo"] = False
                 else:
                     st.error(msg)
                     st.session_state["stripe_data"] = None
                     st.session_state["qbo_data"] = None
+                    st.session_state["audit_authorized"] = False
             except Exception as e:
-                st.error(f"Erro ao ler CSVs: {e}")
+                st.error(f"Erro ao processar estrutura dos CSVs: {e}")
+                st.session_state["stripe_data"] = None
+                st.session_state["qbo_data"] = None
+                st.session_state["audit_authorized"] = False
 
         s_active = st.session_state["stripe_data"]
         q_active = st.session_state["qbo_data"]
+        is_demo = st.session_state["is_demo"]
 
         if s_active is not None and q_active is not None:
-            res = run_forensic_reconciliation(s_active, q_active)
-
-            if res:
-                if res["quarantined"]:
-                    st.warning(f"⚠ **Qualidade dos Dados:** {len(res['quarantined'])} linha(s) continham valores corrompidos e foram isoladas sob incerteza técnica.")
-                    with st.expander("Ver detalhes dos registros em quarentena"):
-                        st.dataframe(pd.DataFrame(res["quarantined"]), use_container_width=True)
-
+            if not is_demo and not st.session_state["audit_authorized"]:
                 st.markdown("---")
-                st.subheader("2. Diagnóstico da Conta Stripe Clearing")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Saldo QBO em Aberto", f"${res['qbo_balance']:,.2f}")
-                m2.metric("Discrepâncias Confirmadas", f"${res['confirmed_discrepancies']:,.2f}")
-                m3.metric("Exposição em Quarentena", f"${res['quarantined_exposure']:,.2f}")
-                m4.metric("Diferença Residual Sem Lastro", f"${res['unexplained_residual']:,.2f}")
-
-                if res['audit_status'] == "CLEAN":
-                    st.success("✅ **Status Contábil:** Saldo integralmente conciliado e fechado sem resíduos.")
-                elif res['audit_status'] == "INCONCLUSIVE":
-                    st.info("ℹ️ **Status Contábil:** Saldo fechado matematicamente, mas parecer condicionado à auditoria manual dos itens em quarentena.")
-                else:
-                    st.error("⚠️ **Status Contábil:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
-
-                st.markdown("---")
-                st.subheader(f"3. Inconsistências Mapeadas ({len(res['detections'])} itens)")
-                st.dataframe(pd.DataFrame([{
-                    "Status": d_item["status"],
-                    "Categoria": d_item["categoria"],
-                    "Documento / Ref": d_item["documento"],
-                    "Impacto Contábil": f"{d_item['sinal']}${d_item['impacto']:,.2f}" if d_item['impacto'] > 0 else "$0.00",
-                    "Exposição Nominal": f"${d_item['exposure']:,.2f}",
-                    "Diagnóstico": d_item["descricao"]
-                } for d_item in res['detections']]), use_container_width=True)
-
-                st.markdown("---")
-                st.subheader("4. Resolução das Divergências")
-                st.info("💡 Deseja receber um relatório estruturado das inconsistências para orientar o ajuste contábil no QuickBooks?")
+                st.subheader("2. Autenticação e Cota de Uso")
+                st.caption("Você possui até 2 auditorias gratuitas por mês com arquivos reais.")
                 
-                has_webhook = hasattr(st, "secrets") and "LEAD_WEBHOOK_URL" in st.secrets
-                if not has_webhook:
-                    st.caption("ℹ Modo Local: Secret `LEAD_WEBHOOK_URL` não configurada. Leads serão gravados no arquivo de sessão.")
-
-                col_cta, _ = st.columns([2, 3])
-                with col_cta:
-                    email = st.text_input("Seu e-mail profissional:")
-                    if st.button("Solicitar Relatório de Divergências"):
-                        if email and "@" in email and "." in email:
-                            if save_lead(email):
-                                st.success("Solicitação recebida! Enviaremos as instruções de conciliação.")
-                            else:
-                                st.error("Erro temporário ao registrar solicitação. Tente novamente.")
+                col_auth, _ = st.columns([2, 3])
+                with col_auth:
+                    user_email = st.text_input("Seu e-mail corporativo para processar a auditoria:", key="auth_user_email")
+                    if st.button("Autorizar Execução da Auditoria", type="primary"):
+                        if not user_email:
+                            st.warning("Por favor, insira um e-mail válido para iniciar.")
                         else:
-                            st.warning("Por favor, insira um e-mail válido.")
+                            allowed, count, msg = check_and_increment_usage(user_email)
+                            if not allowed:
+                                st.error(msg)
+                            else:
+                                st.success(msg)
+                                st.session_state["audit_authorized"] = True
+                                st.rerun()
+
+            if st.session_state["audit_authorized"]:
+                res = run_forensic_reconciliation(s_active, q_active)
+
+                if res:
+                    if res["quarantined"]:
+                        st.warning(f"⚠ **Qualidade dos Dados:** {len(res['quarantined'])} linha(s) continham valores corrompidos e foram isoladas sob incerteza técnica.")
+                        with st.expander("Ver detalhes dos registros em quarentena"):
+                            st.dataframe(pd.DataFrame(res["quarantined"]), use_container_width=True)
+
+                    st.markdown("---")
+                    st.subheader("3. Diagnóstico da Conta Stripe Clearing")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Saldo QBO em Aberto", f"${res['qbo_balance']:,.2f}")
+                    m2.metric("Discrepâncias Confirmadas", f"${res['confirmed_discrepancies']:,.2f}")
+                    m3.metric("Exposição em Quarentena", f"${res['quarantined_exposure']:,.2f}")
+                    m4.metric("Diferença Residual Sem Lastro", f"${res['unexplained_residual']:,.2f}")
+
+                    if res['audit_status'] == "CLEAN":
+                        st.success("✅ **Status Contábil:** Saldo integralmente conciliado e fechado sem resíduos.")
+                    elif res['audit_status'] == "INCONCLUSIVE":
+                        st.info("ℹ️ **Status Contábil:** Saldo fechado matematicamente, mas parecer condicionado à auditoria manual dos itens em quarentena.")
+                    else:
+                        st.error("⚠️ **Status Contábil:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
+
+                    st.markdown("---")
+                    st.subheader(f"4. Inconsistências Mapeadas ({len(res['detections'])} itens)")
+                    st.dataframe(pd.DataFrame([{
+                        "Status": d_item["status"],
+                        "Categoria": d_item["categoria"],
+                        "Documento / Ref": d_item["documento"],
+                        "Impacto Contábil": f"{d_item['sinal']}${d_item['impacto']:,.2f}" if d_item['impacto'] > 0 else "$0.00",
+                        "Exposição Nominal": f"${d_item['exposure']:,.2f}",
+                        "Diagnóstico": d_item["descricao"]
+                    } for d_item in res['detections']]), use_container_width=True)
+
+                    st.markdown("---")
+                    st.subheader("5. Ações Recomendadas para o Contador")
+                    st.info("💡 Deseja exportar um parecer estruturado para orientar os ajustes contábeis no razão?")
+                    
+                    col_cta, _ = st.columns([2, 3])
+                    with col_cta:
+                        email_lead = st.text_input("E-mail para envio do relatório executivo:", key="lead_email_input")
+                        if st.button("Solicitar Relatório Estruturado"):
+                            if email_lead and "@" in email_lead and "." in email_lead:
+                                if save_lead(email_lead):
+                                    st.success("Solicitação confirmada! O relatório de conciliação foi preparado.")
+                                else:
+                                    st.error("Erro temporário ao registrar solicitação. Tente novamente.")
+                            else:
+                                st.warning("Por favor, insira um e-mail válido.")
 
     with tab_lab:
         st.markdown("Ambiente de validação formal por simulação estocástica contra Ground Truth conhecido.")
@@ -1215,9 +1279,9 @@ def run_app():
             st.subheader("Execução Forense Individual")
             seed_input = st.number_input("Semente Cronológica (Seed):", min_value=1, max_value=99999, value=42, key="seed_num")
             if st.button("🧪 Reconciliar Fechamento Canônico", type="primary", key="btn_run_seed"):
-                s_df, q_perfect, p_dates, _ = build_chronological_universe(seed=seed_input)
+                s_df, q_perf, p_dates, _ = build_chronological_universe(seed=seed_input)
                 rng = random.Random(seed_input)
-                q_corrupted, gt = inject_adversarial_suite(q_perfect, p_dates, rng)
+                q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
                 res_single = run_forensic_reconciliation(s_df, q_corrupted)
                 met_single = evaluate_bipartite_forensic_metrics(res_single['detections'], gt)
                 st.session_state["v5_single"] = {"res": res_single, "gt": gt, "met": met_single}
@@ -1230,9 +1294,9 @@ def run_app():
                 progress = st.progress(0)
                 for run_idx in range(mc_runs):
                     run_seed = 3000 + run_idx
-                    s_df, q_perfect, p_dates, _ = build_chronological_universe(seed=run_seed)
+                    s_df, q_perf, p_dates, _ = build_chronological_universe(seed=run_seed)
                     rng = random.Random(run_seed)
-                    q_corrupted, gt = inject_adversarial_suite(q_perfect, p_dates, rng)
+                    q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
                     res_mc = run_forensic_reconciliation(s_df, q_corrupted)
                     met_mc = evaluate_bipartite_forensic_metrics(res_mc['detections'], gt)
                     met_mc["run"] = run_idx + 1
