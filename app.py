@@ -1223,7 +1223,7 @@ def run_app():
         
         st.markdown('''
         > ⚖️ **Notice of Advisory Scope & CPA Verification:**  
-        > Este software opera como motor analítico de suporte à identificação de inconsistências financeiras.  
+        > This software operates as an assistive analytical engine for detecting ledger discrepancies and financial variances.  
         > **Recommended Action — Subject to CPA/Accountant Review:** This diagnostic suite provides analytical discrepancy mapping. **Recommended Action — Subject to CPA/Accountant Review**: Proposed adjusting journal entries and diagnostic findings do not constitute formal tax, legal, or licensed audit advice. All adjustments must be ratified by an authorized corporate controller or CPA.
         ''')
         
@@ -1394,7 +1394,7 @@ def run_app():
         if "v5_mc_df" in st.session_state:
             df_mc = st.session_state["v5_mc_df"]
             st.markdown("---")
-            st.subheader("Sumário Executivo da Bateria Monte Carlo")
+            st.subheader("Monte Carlo Executive Simulation Summary")
             s1, s2, s3, s4, s5, s6 = st.columns(6)
             s1.metric("Detection Recall", f"{df_mc['detection_recall'].mean():.1f}%")
             s2.metric("Classification", f"{df_mc['classification_accuracy'].mean():.1f}%")
@@ -1403,7 +1403,7 @@ def run_app():
             s5.metric("Financial Precision", f"{df_mc['financial_precision'].mean():.1f}%")
             s6.metric("False Positive Rate", f"{df_mc['false_positive_rate'].mean():.1f}%")
 
-            st.markdown("##### Painel de Casos Críticos (Worst-Case Tracking)")
+            st.markdown("##### Worst-Case Ledger Variance Tracking Panel")
             worst = df_mc.sort_values(by=["financial_recall", "residual"], ascending=[True, False]).head(5)
             st.dataframe(worst[[
                 "seed", "anomalies_gt", "anomalies_detected", "detection_recall", 
