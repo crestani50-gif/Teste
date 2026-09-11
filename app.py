@@ -1197,8 +1197,12 @@ def run_app():
     st.subheader("Forensic Reconciliation")
     st.caption("Find and explain ledger discrepancies before month-end close.")
 
-    tab_app, tab_lab = st.tabs(["🚀 Close Diagnostic", "🔬 Scientific Benchmark (Monte Carlo)"])
-
+    show_lab = st.query_params.get("lab") == "true"
+    if show_lab:
+        tab_app, tab_lab = st.tabs(["🚀 Close Diagnostic", "🔬 Scientific Benchmark (Monte Carlo)"])
+    else:
+        tab_app = st.container()
+        tab_lab = None
     with tab_app:
         if "stripe_data" not in st.session_state:
             st.session_state["stripe_data"] = None
@@ -1346,74 +1350,75 @@ def run_app():
                             else:
                                 st.warning("Por favor, insira um e-mail válido.")
 
-    with tab_lab:
-        st.markdown("Formal validation environment via stochastic simulation against known Ground Truth.")
-        col_bench1, col_bench2 = st.columns(2)
+    if show_lab and tab_lab is not None:
+        with tab_lab:
+            st.markdown("Formal validation environment via stochastic simulation against known Ground Truth.")
+            col_bench1, col_bench2 = st.columns(2)
 
-        with col_bench1:
-            st.subheader("Deterministic Benchmark Run")
-            seed_input = st.number_input("Random Seed:", min_value=1, max_value=99999, value=42, key="seed_num")
-            if st.button("🧪 Reconcile Benchmark Scenario", type="primary", key="btn_run_seed"):
-                s_df, q_perf, p_dates, _ = build_chronological_universe(seed=seed_input)
-                rng = random.Random(seed_input)
-                q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
-                res_single = run_forensic_reconciliation(s_df, q_corrupted)
-                met_single = evaluate_bipartite_forensic_metrics(res_single['detections'], gt)
-                st.session_state["v5_single"] = {"res": res_single, "gt": gt, "met": met_single}
-
-        with col_bench2:
-            st.subheader("Monte Carlo Stress Test Suite")
-            mc_runs = st.slider("Independent Accounting Closes:", min_value=10, max_value=100, value=30, step=5, key="slider_mc")
-            if st.button(f"⚡ Execute Monte Carlo Simulation ({mc_runs} Rodadas)", key="btn_run_mc"):
-                mc_results = []
-                progress = st.progress(0)
-                for run_idx in range(mc_runs):
-                    run_seed = 3000 + run_idx
-                    s_df, q_perf, p_dates, _ = build_chronological_universe(seed=run_seed)
-                    rng = random.Random(run_seed)
+            with col_bench1:
+                st.subheader("Deterministic Benchmark Run")
+                seed_input = st.number_input("Random Seed:", min_value=1, max_value=99999, value=42, key="seed_num")
+                if st.button("🧪 Reconcile Benchmark Scenario", type="primary", key="btn_run_seed"):
+                    s_df, q_perf, p_dates, _ = build_chronological_universe(seed=seed_input)
+                    rng = random.Random(seed_input)
                     q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
-                    res_mc = run_forensic_reconciliation(s_df, q_corrupted)
-                    met_mc = evaluate_bipartite_forensic_metrics(res_mc['detections'], gt)
-                    met_mc["run"] = run_idx + 1
-                    met_mc["seed"] = run_seed
-                    met_mc["residual"] = float(res_mc['residual'])
-                    met_mc["quarantined_exposure"] = float(res_mc['quarantined_exposure'])
-                    mc_results.append(met_mc)
-                    progress.progress((run_idx + 1) / mc_runs)
-                st.session_state["v5_mc_df"] = pd.DataFrame(mc_results)
-                st.success(f"{mc_runs} fechamentos estocásticos auditados com sucesso!")
+                    res_single = run_forensic_reconciliation(s_df, q_corrupted)
+                    met_single = evaluate_bipartite_forensic_metrics(res_single['detections'], gt)
+                    st.session_state["v5_single"] = {"res": res_single, "gt": gt, "met": met_single}
 
-        if "v5_single" in st.session_state:
-            data = st.session_state["v5_single"]
-            res_s, met_s = data["res"], data["met"]
-            st.markdown("---")
-            st.subheader("Bipartite Forensic Reconciliation (Independent Ground-Truth Oracle)")
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Detection Recall", f"{met_s['detection_recall']:.1f}%")
-            c2.metric("Classification", f"{met_s['classification_accuracy']:.1f}%")
-            c3.metric("Value Accuracy", f"{met_s['value_accuracy']:.1f}%")
-            c4.metric("Financial Recall", f"{met_s['financial_recall']:.1f}%")
-            c5.metric("Financial Precision", f"{met_s['financial_precision']:.1f}%")
+            with col_bench2:
+                st.subheader("Monte Carlo Stress Test Suite")
+                mc_runs = st.slider("Independent Accounting Closes:", min_value=10, max_value=100, value=30, step=5, key="slider_mc")
+                if st.button(f"⚡ Execute Monte Carlo Simulation ({mc_runs} Rodadas)", key="btn_run_mc"):
+                    mc_results = []
+                    progress = st.progress(0)
+                    for run_idx in range(mc_runs):
+                        run_seed = 3000 + run_idx
+                        s_df, q_perf, p_dates, _ = build_chronological_universe(seed=run_seed)
+                        rng = random.Random(run_seed)
+                        q_corrupted, gt = inject_adversarial_suite(q_perf, p_dates, rng)
+                        res_mc = run_forensic_reconciliation(s_df, q_corrupted)
+                        met_mc = evaluate_bipartite_forensic_metrics(res_mc['detections'], gt)
+                        met_mc["run"] = run_idx + 1
+                        met_mc["seed"] = run_seed
+                        met_mc["residual"] = float(res_mc['residual'])
+                        met_mc["quarantined_exposure"] = float(res_mc['quarantined_exposure'])
+                        mc_results.append(met_mc)
+                        progress.progress((run_idx + 1) / mc_runs)
+                    st.session_state["v5_mc_df"] = pd.DataFrame(mc_results)
+                    st.success(f"{mc_runs} fechamentos estocásticos auditados com sucesso!")
 
-        if "v5_mc_df" in st.session_state:
-            df_mc = st.session_state["v5_mc_df"]
-            st.markdown("---")
-            st.subheader("Monte Carlo Executive Simulation Summary")
-            s1, s2, s3, s4, s5, s6 = st.columns(6)
-            s1.metric("Detection Recall", f"{df_mc['detection_recall'].mean():.1f}%")
-            s2.metric("Classification", f"{df_mc['classification_accuracy'].mean():.1f}%")
-            s3.metric("Value Accuracy", f"{df_mc['value_accuracy'].mean():.1f}%")
-            s4.metric("Financial Recall", f"{df_mc['financial_recall'].mean():.1f}%")
-            s5.metric("Financial Precision", f"{df_mc['financial_precision'].mean():.1f}%")
-            s6.metric("False Positive Rate", f"{df_mc['false_positive_rate'].mean():.1f}%")
+            if "v5_single" in st.session_state:
+                data = st.session_state["v5_single"]
+                res_s, met_s = data["res"], data["met"]
+                st.markdown("---")
+                st.subheader("Bipartite Forensic Reconciliation (Independent Ground-Truth Oracle)")
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("Detection Recall", f"{met_s['detection_recall']:.1f}%")
+                c2.metric("Classification", f"{met_s['classification_accuracy']:.1f}%")
+                c3.metric("Value Accuracy", f"{met_s['value_accuracy']:.1f}%")
+                c4.metric("Financial Recall", f"{met_s['financial_recall']:.1f}%")
+                c5.metric("Financial Precision", f"{met_s['financial_precision']:.1f}%")
 
-            st.markdown("##### Worst-Case Ledger Variance Tracking Panel")
-            worst = df_mc.sort_values(by=["financial_recall", "residual"], ascending=[True, False]).head(5)
-            st.dataframe(worst[[
-                "seed", "anomalies_gt", "anomalies_detected", "detection_recall", 
-                "financial_recall", "financial_precision", "missed_value", 
-                "residual", "quarantined_exposure"
-            ]], use_container_width=True)
+            if "v5_mc_df" in st.session_state:
+                df_mc = st.session_state["v5_mc_df"]
+                st.markdown("---")
+                st.subheader("Monte Carlo Executive Simulation Summary")
+                s1, s2, s3, s4, s5, s6 = st.columns(6)
+                s1.metric("Detection Recall", f"{df_mc['detection_recall'].mean():.1f}%")
+                s2.metric("Classification", f"{df_mc['classification_accuracy'].mean():.1f}%")
+                s3.metric("Value Accuracy", f"{df_mc['value_accuracy'].mean():.1f}%")
+                s4.metric("Financial Recall", f"{df_mc['financial_recall'].mean():.1f}%")
+                s5.metric("Financial Precision", f"{df_mc['financial_precision'].mean():.1f}%")
+                s6.metric("False Positive Rate", f"{df_mc['false_positive_rate'].mean():.1f}%")
+
+                st.markdown("##### Worst-Case Ledger Variance Tracking Panel")
+                worst = df_mc.sort_values(by=["financial_recall", "residual"], ascending=[True, False]).head(5)
+                st.dataframe(worst[[
+                    "seed", "anomalies_gt", "anomalies_detected", "detection_recall", 
+                    "financial_recall", "financial_precision", "missed_value", 
+                    "residual", "quarantined_exposure"
+                ]], use_container_width=True)
 
 if __name__ == "__main__" or os.environ.get("RUN_STREAMLIT") == "true":
     run_app()
