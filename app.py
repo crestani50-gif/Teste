@@ -496,9 +496,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 m_impact = m['debit'] if m['debit'] > Decimal("0.00") else m['credit']
                 m_sign = "+" if m['debit'] > Decimal("0.00") else "-"
                 detections.append({
-                    "categoria": "Duplicidade de Transferência", "status": "CONFIRMED",
+                    "categoria": "Duplicate Payout Entry", "status": "CONFIRMED",
                     "documento": str(m["num"]), "impacto": m_impact, "exposure": Decimal("0.00"), "sinal": m_sign,
-                    "descricao": f"Payout {pid} lançado em duplicidade no QBO ({m['num']})."
+                    "descricao": f"Payout {pid} posted as duplicate in QBO ledger ({m['num']})."
                 })
             matches[0]['reconciled'] = True
         else:
@@ -510,17 +510,17 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
 
             if diff != Decimal("0.00"):
                 detections.append({
-                    "categoria": "Erro de Valor / Digitação", "status": "CONFIRMED",
+                    "categoria": "Posting Discrepancy (Amount Variance)", "status": "CONFIRMED",
                     "documento": str(m["num"]), "impacto": abs(diff), "exposure": Decimal("0.00"), "sinal": "+" if diff > 0 else "-",
-                    "descricao": f"Payout {pid} com divergência no razão: efeito registrado ${actual_effect:,.2f} vs esperado ${expected_effect:,.2f}."
+                    "descricao": f"Payout {pid} with ledger discrepancy: posted effect ${actual_effect:,.2f} vs expected ${expected_effect:,.2f}."
                 })
             if m['date'] and p_date:
                 delay = (m['date'] - p_date).days
                 if delay > SETTLEMENT_WINDOW_DAYS:
                     detections.append({
-                        "categoria": "Janela de Liquidação (Timing)", "status": "CONFIRMED",
+                        "categoria": "Timing Variance (Settlement Window)", "status": "CONFIRMED",
                         "documento": str(m["num"]), "impacto": Decimal("0.00"), "exposure": Decimal("0.00"), "sinal": "0",
-                        "descricao": f"Payout {pid} emitido em {p_date} mas registrado no banco em {m['date']} (+{delay} dias)."
+                        "descricao": f"Payout {pid} initiated on {p_date} but posted to bank on {m['date']} (+{delay} dias)."
                     })
 
     # 2. Taxas por lote liquidado
@@ -556,9 +556,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         else:
             for pid, fee_amt in unbooked_payout_fees.items():
                 detections.append({
-                    "categoria": "Taxas Não Escrituradas", "status": "CONFIRMED",
+                    "categoria": "Unrecorded Stripe Processing Fees", "status": "CONFIRMED",
                     "documento": f"Taxas {pid}", "impacto": fee_amt, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Taxas Stripe de ${fee_amt:,.2f} para o lote {pid} ausentes no razão."
+                    "descricao": f"Taxas Stripe de ${fee_amt:,.2f} for batch {pid} unrecorded in general ledger."
                 })
 
     # 2.1 Reconciliação de taxas unsettled / provisionadas
@@ -581,9 +581,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 })
         else:
             detections.append({
-                "categoria": "Taxas Não Escrituradas", "status": "CONFIRMED",
+                "categoria": "Unrecorded Stripe Processing Fees", "status": "CONFIRMED",
                 "documento": "Taxas unsettled", "impacto": unsettled_fees, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Taxas Stripe de ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) ausentes no razão."
+                "descricao": f"Taxas Stripe de ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) unrecorded in general ledger."
             })
 
     # 3. Reembolsos
@@ -593,9 +593,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         matches = [q for q in q_valid if not q['reconciled'] and 'Refund' in q['type'] and match_exact_token(q['memo'], tx_id)]
         if not matches:
             detections.append({
-                "categoria": "Reembolso Omitido", "status": "CONFIRMED",
+                "categoria": "Omitted Refund Entry", "status": "CONFIRMED",
                 "documento": tx_id, "impacto": expected_ref, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Reembolso {tx_id} no valor de ${expected_ref:,.2f} não lançado no QBO."
+                "descricao": f"Reembolso {tx_id} in the amount of ${expected_ref:,.2f} missing from QBO ledger."
             })
         else:
             m = matches[0]
@@ -615,9 +615,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         matches = [q for q in q_valid if not q['reconciled'] and match_exact_token(q['memo'], tx_id)]
         if not matches:
             detections.append({
-                "categoria": "Ajuste de Saldo Stripe", "status": "CONFIRMED",
+                "categoria": "Stripe Balance Adjustment", "status": "CONFIRMED",
                 "documento": tx_id, "impacto": expected_adj, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Ajuste interno da Stripe ({tx_id}) de -${expected_adj:,.2f} sem contrapartida contábil."
+                "descricao": f"Ajuste interno da Stripe ({tx_id}) de -${expected_adj:,.2f} unposted to general ledger."
             })
         else:
             m = matches[0]
@@ -660,15 +660,15 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 m['reconciled'] = True
                 impact = m['debit'] * Decimal("2")
                 detections.append({
-                    "categoria": "Erro de Sinal / Inversão Contábil", "status": "CONFIRMED",
+                    "categoria": "Sign Inversion Error (Dr/Cr Flip)", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": impact, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Disputa {tx_id} escriturada com inversão de sinal (Débito de ${m['debit']:,.2f} em vez de Crédito)."
+                    "descricao": f"Disputa {tx_id} posted with inverted sign (Debit of ${m['debit']:,.2f} instead of Credit)."
                 })
             else:
                 detections.append({
                     "categoria": "Disputa / Chargeback Não Escriturado", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": expected_disp, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Disputa {tx_id} no valor de ${expected_disp:,.2f} retida na Stripe mas sem lançamento no QBO."
+                    "descricao": f"Disputa {tx_id} in the amount of ${expected_disp:,.2f} retida na Stripe mas sem lançamento no QBO."
                 })
 
     # 6. Cobranças
@@ -934,7 +934,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 ground_truth.append({
                     "anomaly_id": "TIMING_A1",
                     "target_id": str(row['Num']),
-                    "category": "Janela de Liquidação (Timing)",
+                    "category": "Timing Variance (Settlement Window)",
                     "delta": Decimal("0.00"),
                     "exposure": Decimal("0.00")
                 })
@@ -946,7 +946,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 rem = qbo_corrupted.pop(i)
                 ground_truth.append({
                     "anomaly_id": "FEE_A2", "target_id": "Taxas po_week_2",
-                    "category": "Taxas Não Escrituradas",
+                    "category": "Unrecorded Stripe Processing Fees",
                     "delta": Decimal(rem['Credit']),
                     "exposure": Decimal("0.00")
                 })
@@ -960,7 +960,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 tid = m.group(0) if m else "pyr_refund"
                 ground_truth.append({
                     "anomaly_id": "REF_A3", "target_id": tid,
-                    "category": "Reembolso Omitido",
+                    "category": "Omitted Refund Entry",
                     "delta": Decimal(rem['Credit']),
                     "exposure": Decimal("0.00")
                 })
@@ -977,7 +977,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 qbo_corrupted.append(dup)
                 ground_truth.append({
                     "anomaly_id": "DUP_A4", "target_id": dup['Num'],
-                    "category": "Duplicidade de Transferência",
+                    "category": "Duplicate Payout Entry",
                     "delta": delta_val,
                     "exposure": Decimal("0.00")
                 })
@@ -990,7 +990,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 row['Credit'] = str(Decimal(row['Credit']) + diff)
                 ground_truth.append({
                     "anomaly_id": "VAL_A5", "target_id": str(row['Num']),
-                    "category": "Erro de Valor / Digitação",
+                    "category": "Posting Discrepancy (Amount Variance)",
                     "delta": -diff,
                     "exposure": Decimal("0.00")
                 })
@@ -1002,7 +1002,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 rem = qbo_corrupted.pop(i)
                 ground_truth.append({
                     "anomaly_id": "ADJ_A6", "target_id": "adj_999",
-                    "category": "Ajuste de Saldo Stripe",
+                    "category": "Stripe Balance Adjustment",
                     "delta": Decimal(rem['Credit']),
                     "exposure": Decimal("0.00")
                 })
@@ -1022,7 +1022,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
                 tid = m.group(0) if m else "dp_dispute"
                 ground_truth.append({
                     "anomaly_id": "SIGN_A7", "target_id": tid,
-                    "category": "Erro de Sinal / Inversão Contábil",
+                    "category": "Sign Inversion Error (Dr/Cr Flip)",
                     "delta": val * Decimal("2"),
                     "exposure": Decimal("0.00")
                 })
@@ -1196,7 +1196,7 @@ def run_app():
     st.title("Stripe to QuickBooks Online Forensic Reconciliation Engine")
     st.caption("Automated bipartite ledger variance analysis for month-end close and audit readiness.")
 
-    tab_app, tab_lab = st.tabs(["🚀 Diagnóstico de Fechamento", "🔬 Bancada Científica (Monte Carlo)"])
+    tab_app, tab_lab = st.tabs(["🚀 Diagnostic Finding de Fechamento", "🔬 Bancada Científica (Monte Carlo)"])
 
     with tab_app:
         if "stripe_data" not in st.session_state:
@@ -1244,7 +1244,7 @@ def run_app():
             st.session_state["qbo_data"] = q_mock
             st.session_state["is_demo"] = True
             st.session_state["audit_authorized"] = True
-            st.success("Cenário demonstrativo com 7 inconsistências carregado (Uso Ilimitado)!")
+            st.success("Canonical audit benchmark loaded with 7 intentional variances (Unrestricted Demo).")
 
         if uploaded_stripe and uploaded_qbo:
             try:
@@ -1301,12 +1301,12 @@ def run_app():
                             st.dataframe(pd.DataFrame(res["quarantined"]), use_container_width=True)
 
                     st.markdown("---")
-                    st.subheader("3. Diagnóstico da Conta Stripe Clearing")
+                    st.subheader("3. Stripe Clearing Account Reconciliation Summary")
                     m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Saldo QBO em Aberto", f"${res['qbo_balance']:,.2f}")
-                    m2.metric("Discrepâncias Confirmadas", f"${res['confirmed_discrepancies']:,.2f}")
-                    m3.metric("Exposição em Quarentena", f"${res['quarantined_exposure']:,.2f}")
-                    m4.metric("Diferença Residual Sem Lastro", f"${res['unexplained_residual']:,.2f}")
+                    m1.metric("Unreconciled QBO Ledger Balance", f"${res['qbo_balance']:,.2f}")
+                    m2.metric("Identified Ledger Discrepancies", f"${res['confirmed_discrepancies']:,.2f}")
+                    m3.metric("Quarantine Data Exposure", f"${res['quarantined_exposure']:,.2f}")
+                    m4.metric("Unaccounted Residual Variance", f"${res['unexplained_residual']:,.2f}")
 
                     if res['audit_status'] == "CLEAN":
                         st.success("✅ **Status Contábil:** Saldo integralmente conciliado e fechado sem resíduos.")
@@ -1316,23 +1316,23 @@ def run_app():
                         st.error("⚠️ **Status Contábil:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
 
                     st.markdown("---")
-                    st.subheader(f"4. Inconsistências Mapeadas ({len(res['detections'])} itens)")
+                    st.subheader(f"4. Itemized Forensic Discrepancies ({len(res['detections'])} itens)")
                     st.dataframe(pd.DataFrame([{
                         "Status": d_item["status"],
-                        "Categoria": d_item["categoria"],
-                        "Documento / Ref": d_item["documento"],
-                        "Impacto Contábil": f"{d_item['sinal']}${d_item['impacto']:,.2f}" if d_item['impacto'] > 0 else "$0.00",
-                        "Exposição Nominal": f"${d_item['exposure']:,.2f}",
-                        "Diagnóstico": d_item["descricao"]
+                        "Category": d_item["categoria"],
+                        "Document Ref / ID": d_item["documento"],
+                        "Ledger Net Impact": f"{d_item['sinal']}${d_item['impacto']:,.2f}" if d_item['impacto'] > 0 else "$0.00",
+                        "Gross Exposure": f"${d_item['exposure']:,.2f}",
+                        "Diagnostic Finding": d_item["descricao"]
                     } for d_item in res['detections']]), use_container_width=True)
 
                     st.markdown("---")
-                    st.subheader("5. Ações Recomendadas para o Contador")
-                    st.info("💡 Deseja exportar um parecer estruturado para orientar os ajustes contábeis no razão?")
+                    st.subheader("5. Adjusting Journal Entries & CPA Workpapers")
+                    st.info("💡 Export certified workpapers to post adjusting journal entries directly into QuickBooks Online:")
                     
                     col_cta, _ = st.columns([2, 3])
                     with col_cta:
-                        email_lead = st.text_input("E-mail para envio do relatório executivo:", key="lead_email_input")
+                        email_lead = st.text_input("Controller / Reviewer Email for Audit Trail:", key="lead_email_input")
                         if st.button("Solicitar Relatório Estruturado"):
                             if email_lead and "@" in email_lead and "." in email_lead:
                                 if save_lead(email_lead):
