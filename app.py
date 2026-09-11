@@ -1386,7 +1386,7 @@ def run_app():
             data = st.session_state["v5_single"]
             res_s, met_s = data["res"], data["met"]
             st.markdown("---")
-            st.subheader("Avaliação Forense Bipartida (Oracle Imparcial)")
+            st.subheader("Bipartite Forensic Reconciliation (Independent Ground-Truth Oracle)")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("Detection Recall", f"{met_s['detection_recall']:.1f}%")
             c2.metric("Classification", f"{met_s['classification_accuracy']:.1f}%")
