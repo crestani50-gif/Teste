@@ -112,11 +112,15 @@ def robust_read_csv(uploaded_file):
 # --- 1. PERSISTÊNCIA VERIFICADA DE LEADS ---
 
 def save_lead(email):
-    timestamp = datetime.now().isoformat()
-    record = f"{timestamp} - {email.strip()}\n"
-    persisted = False
-
-    webhook_url = st.secrets.get("LEAD_WEBHOOK_URL", None) if hasattr(st, "secrets") else None
+    webhook_url = None
+    try:
+        if "LEAD_WEBHOOK_URL" in st.secrets:
+            webhook_url = st.secrets["LEAD_WEBHOOK_URL"]
+    except Exception:
+        pass
+    if not webhook_url:
+        import os
+        webhook_url = os.environ.get("LEAD_WEBHOOK_URL", None)
     if webhook_url:
         try:
             req = urllib.request.Request(
