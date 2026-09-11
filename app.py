@@ -14,6 +14,53 @@ import streamlit as st
 # Módulo de governança e limite de cotas
 try:
     from usage_guard import check_and_increment_usage
+
+    st.set_page_config(
+        page_title="Forensic Ledger Reconciliation | Stripe to QBO",
+        page_icon="⚖️",
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+
+    st.markdown('''
+    <style>
+        /* Modern corporate typography and container cleanup */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 1200px;
+        }
+        h1, h2, h3 {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            letter-spacing: -0.02em;
+            color: #0f172a;
+        }
+        /* Metric card enhancements */
+        div[data-testid="metric-container"] {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            padding: 1rem 1.25rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        /* Legal notice styling */
+        .legal-card {
+            background-color: #f8fafc;
+            border-left: 4px solid #475569;
+            padding: 12px 16px;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.85rem;
+            color: #334155;
+            margin-bottom: 1.5rem;
+        }
+        /* Primary button refinement */
+        .stButton>button {
+            border-radius: 6px;
+            font-weight: 500;
+        }
+    </style>
+    ''', unsafe_allow_html=True)
+
 except ImportError:
     # Fallback defensivo caso o módulo ainda não tenha sido criado
     def check_and_increment_usage(email: str):
@@ -1145,9 +1192,9 @@ def evaluate_bipartite_forensic_metrics(detections, ground_truth):
 # --- 6. CAMADA DE INTERFACE (ENCAPSULADA) ---
 
 def run_app():
-    st.set_page_config(page_title="Stripe – QBO Diagnostic Auditor", page_icon="🔍", layout="wide")
-    st.title("🔍 Stripe – QBO Close Diagnostic")
-    st.caption("Auditor forense de conciliação para identificação de inconsistências contábeis")
+    
+    st.title("Stripe to QuickBooks Online Forensic Reconciliation Engine")
+    st.caption("Automated bipartite ledger variance analysis for month-end close and audit readiness.")
 
     tab_app, tab_lab = st.tabs(["🚀 Diagnóstico de Fechamento", "🔬 Bancada Científica (Monte Carlo)"])
 
@@ -1162,36 +1209,36 @@ def run_app():
             st.session_state["audit_authorized"] = False
 
         # --- PORTÃO DE ENTRADA, CONTROLE DE ACESSO & ISENÇÃO JURÍDICA ---
-        st.markdown("### 0. Identificação & Isenção de Responsabilidade")
+        st.markdown("### 0. Compliance & Workstation Authentication")
         
         col_em1, col_em2 = st.columns([2, 1])
         with col_em1:
             user_email = st.text_input(
-                "E-mail profissional para emissao do relatorio auditavel:",
-                placeholder="contador@suaempresa.com",
+                "Work Email (for audit trail and report logging):",
+                placeholder="controller@company.com",
                 help="Sua cota gratuita da direito a 2 auditorias mensais completas."
             )
         with col_em2:
-            st.caption("🔒 Cota: 2 auditorias gratuitas / mes")
+            st.caption("🔒 Tier: 2 complimentary audits / mo")
         
         st.markdown('''
-        > ⚖️ **Aviso Legal & Termos de Uso (Instrumento Assistivo):**  
+        > ⚖️ **Notice of Advisory Scope & CPA Verification:**  
         > Este software opera como motor analítico de suporte à identificação de inconsistências financeiras.  
-        > **Recommended Action — Subject to CPA/Accountant Review:** Os apontamentos e sugestões de partidas dobradas (Débito/Crédito) gerados pela ferramenta não constituem parecer contábil formal, auditoria fiscal ou recomendação tributária. A validação e inclusão no razão geral competem exclusivamente ao profissional contábil habilitado.
+        > **Recommended Action — Subject to CPA/Accountant Review:** This diagnostic suite provides analytical discrepancy mapping. **Recommended Action — Subject to CPA/Accountant Review**: Proposed adjusting journal entries and diagnostic findings do not constitute formal tax, legal, or licensed audit advice. All adjustments must be ratified by an authorized corporate controller or CPA.
         ''')
         
         terms_accepted = st.checkbox(
-            "Declaro que compreendo a natureza assistiva da ferramenta e que qualquer ajuste contábil sugerido está sujeito à revisão técnica do responsável contábil.",
+            "I acknowledge this tool operates as an assistive diagnostic parser and all recommended adjustments remain subject to licensed CPA review.",
             value=False
         )
         
         st.divider()
         
-        st.subheader("1. Arquivos de Entrada")
-        uploaded_stripe = st.file_uploader("Arquivo Stripe Balance History (.csv)", type=["csv"], key="stripe_uploader")
-        uploaded_qbo = st.file_uploader("Razão Stripe Clearing do QBO (.csv)", type=["csv"], key="qbo_uploader")
+        st.subheader("1. Ledger Data Ingestion")
+        uploaded_stripe = st.file_uploader("Stripe Balance History CSV (Standard Export)", type=["csv"], key="stripe_uploader")
+        uploaded_qbo = st.file_uploader("QuickBooks Online Stripe Clearing Ledger CSV", type=["csv"], key="qbo_uploader")
         
-        if st.button("🧪 Carregar Dados de Exemplo (Cenário Demonstrativo)", key="btn_load_canonical"):
+        if st.button("Load Canonical Audit Benchmark (Demo Dataset)", key="btn_load_canonical"):
             s_mock, q_mock = generate_canonical_demo_data()
             st.session_state["stripe_data"] = s_mock
             st.session_state["qbo_data"] = q_mock
