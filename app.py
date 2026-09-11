@@ -112,20 +112,31 @@ def robust_read_csv(uploaded_file):
 # --- 1. PERSISTÊNCIA VERIFICADA DE LEADS ---
 
 def save_lead(email):
+    import datetime
+    import json
+    import urllib.request
+    import os
+
+    persisted = False
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    record = str(timestamp) + " | " + str(email).strip() + "\n"
+
     webhook_url = None
     try:
         if "LEAD_WEBHOOK_URL" in st.secrets:
             webhook_url = st.secrets["LEAD_WEBHOOK_URL"]
     except Exception:
         pass
+
     if not webhook_url:
-        import os
         webhook_url = os.environ.get("LEAD_WEBHOOK_URL", None)
+
     if webhook_url:
         try:
+            payload = json.dumps({"email": email.strip(), "timestamp": timestamp, "source": "stripe_qbo_diagnostic"}).encode("utf-8")
             req = urllib.request.Request(
                 webhook_url,
-                data=json.dumps({"email": email.strip(), "timestamp": timestamp, "source": "stripe_qbo_diagnostic"}).encode("utf-8"),
+                data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
             )
             with urllib.request.urlopen(req, timeout=5) as response:
@@ -135,8 +146,8 @@ def save_lead(email):
             pass
 
     try:
-        with open("leads_interessados.txt", "a", encoding="utf-8") as f:
-            f.write(record)
+        with open("leads_interessados.txt", "a", encoding="utf-8") as f_out:
+            f_out.write(record)
         persisted = True
     except Exception:
         pass
