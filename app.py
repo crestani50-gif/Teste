@@ -1228,17 +1228,7 @@ def run_app():
         if "audit_authorized" not in st.session_state:
             st.session_state["audit_authorized"] = False
 
-        st.markdown("### 0. Audit Setup")
-        
-        col_em1, col_em2 = st.columns([2, 1])
-        with col_em1:
-            user_email = st.text_input(
-                "Work Email (for audit trail and report logging):",
-                placeholder="controller@company.com",
-                help="Beta tier includes 3 full ledger reconciliation audits per month."
-            )
-        with col_em2:
-            st.caption("🔒 Free tier: 3 audits / month")
+        st.markdown("### 0. Audit Setup & Governance")
         
         st.markdown('''
         > ⚖️ **Notice of Advisory Scope & Professional Review:**  
@@ -1324,14 +1314,15 @@ def run_app():
                 
                 col_auth, _ = st.columns([2, 3])
                 with col_auth:
-                    auth_email = st.text_input("Seu e-mail corporativo para processar a auditoria:", value=user_email, key="auth_user_email")
+                    auth_email = st.text_input("Work Email corporativo para auditoria e cota:", placeholder="controller@company.com", key="auth_user_email")
                     
                     if not terms_accepted:
-                        st.info("ℹ️ Aceite os termos de revisão profissional acima para habilitar a execução da auditoria.")
+                        st.info("ℹ️ Marque o checkbox dos termos na Seção 0 para habilitar a execução.")
                     
-                    if st.button("Autorizar Execução da Auditoria", type="primary", disabled=not terms_accepted):
-                        if not auth_email:
-                            st.warning("Por favor, insira um e-mail válido para iniciar.")
+                    btn_auth = st.button("Autorizar Execução da Auditoria", type="primary", disabled=not terms_accepted)
+                    if btn_auth:
+                        if not auth_email or "@" not in auth_email:
+                            st.warning("Por favor, insira um e-mail corporativo válido.")
                         else:
                             allowed, count, msg = check_and_increment_usage(auth_email)
                             if not allowed:
@@ -1339,6 +1330,7 @@ def run_app():
                             else:
                                 st.success(msg)
                                 st.session_state["audit_authorized"] = True
+                                st.session_state["authorized_email"] = auth_email
                                 st.rerun()
 
             if st.session_state["audit_authorized"]:
