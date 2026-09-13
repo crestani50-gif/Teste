@@ -14,57 +14,51 @@ import streamlit as st
 # Módulo de governança e limite de cotas
 try:
     from usage_guard import check_and_increment_usage
-
-    st.set_page_config(
-        page_title="Forensic Ledger Reconciliation | Stripe to QBO",
-        page_icon="⚖️",
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
-
-    st.markdown('''
-    <style>
-        /* Modern corporate typography and container cleanup */
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 1200px;
-        }
-        h1, h2, h3 {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            letter-spacing: -0.02em;
-            color: #0f172a;
-        }
-        /* Metric card enhancements */
-        div[data-testid="metric-container"] {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 1rem 1.25rem;
-            border-radius: 8px;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-        }
-        /* Legal notice styling */
-        .legal-card {
-            background-color: #f8fafc;
-            border-left: 4px solid #475569;
-            padding: 12px 16px;
-            border-radius: 0 8px 8px 0;
-            font-size: 0.85rem;
-            color: #334155;
-            margin-bottom: 1.5rem;
-        }
-        /* Primary button refinement */
-        .stButton>button {
-            border-radius: 6px;
-            font-weight: 500;
-        }
-    </style>
-    ''', unsafe_allow_html=True)
-
 except ImportError:
-    # Fallback defensivo caso o módulo ainda não tenha sido criado
     def check_and_increment_usage(email: str):
         return True, 1, "Auditoria liberada (modo sem persistência de cotas)."
+
+st.set_page_config(
+    page_title="Forensic Ledger Reconciliation | Stripe to QBO",
+    page_icon="⚖️",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+st.markdown('''
+<style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1200px;
+    }
+    h1, h2, h3 {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: -0.02em;
+        color: #0f172a;
+    }
+    div[data-testid="metric-container"] {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    }
+    .legal-card {
+        background-color: #f8fafc;
+        border-left: 4px solid #475569;
+        padding: 12px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 0.85rem;
+        color: #334155;
+        margin-bottom: 1.5rem;
+    }
+    .stButton>button {
+        border-radius: 6px;
+        font-weight: 500;
+    }
+</style>
+''', unsafe_allow_html=True)
 
 SETTLEMENT_WINDOW_DAYS = 4
 
@@ -78,10 +72,6 @@ def match_exact_token(text, token):
     return bool(re.search(pattern, str(text), re.IGNORECASE))
 
 def robust_read_csv(uploaded_file):
-    """
-    Lê CSVs reais com tolerância a múltiplos encodings e delimitadores,
-    removendo espaços em branco dos cabeçalhos.
-    """
     bytes_data = uploaded_file.read()
     uploaded_file.seek(0)
     
@@ -96,29 +86,45 @@ def robust_read_csv(uploaded_file):
             continue
 
     if text_content is None:
-        raise ValueError("Não foi possível decodificar o arquivo. Formato de texto incompatível.")
+        raise ValueError("Não foi possível decodificar o arquivo. Formato incompatível.")
 
-    sample = text_content[:2048]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=[',', ';', '\t'])
-        sep = dialect.delimiter
-    except Exception:
+    lines = text_content.splitlines()
+    if not lines:
+        return pd.DataFrame()
+
+    header_idx = 0
+    candidate_keywords = {'balance_transaction_id', 'date', 'num', 'memo/description', 'transaction type', 'gross'}
+    
+    for idx, line in enumerate(lines[:15]):
+        line_lower = line.lower()
+        matches = sum(1 for kw in candidate_keywords if kw in line_lower)
+        if matches >= 2:
+            header_idx = idx
+            break
+
+    content_to_parse = "\n".join(lines[header_idx:])
+    first_data_line = lines[header_idx] if len(lines) > header_idx else ""
+
+    if first_data_line.count(';') > first_data_line.count(','):
+        sep = ';'
+    elif '\t' in first_data_line:
+        sep = '\t'
+    else:
         sep = ','
 
-    df = pd.read_csv(io.StringIO(text_content), sep=sep, dtype=str)
+    df = pd.read_csv(
+        io.StringIO(content_to_parse),
+        sep=sep,
+        dtype=str,
+        engine='python',
+        on_bad_lines='skip'
+    )
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
-# --- 1. PERSISTÊNCIA VERIFICADA DE LEADS ---
-
 def save_lead(email):
-    import datetime
-    import json
-    import urllib.request
-    import os
-
     persisted = False
-    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    timestamp = datetime.now(datetime.timezone.utc if hasattr(datetime, 'timezone') else None).isoformat()
     record = str(timestamp) + " | " + str(email).strip() + "\n"
 
     webhook_url = None
@@ -154,8 +160,6 @@ def save_lead(email):
 
     return persisted
 
-# --- 2. PARSER FORENSE E VALIDAÇÃO DE ESQUEMA ---
-
 class ForensicParser:
     def __init__(self):
         self.quarantine = []
@@ -166,7 +170,6 @@ class ForensicParser:
             return Decimal("0.00")
         
         s = str(val).strip().replace("$", "").replace(",", "").strip()
-        
         if s.startswith("(") and s.endswith(")"):
             s = "-" + s[1:-1].strip()
             
@@ -215,8 +218,6 @@ def validate_schemas(stripe_df, qbo_df):
     if missing_qbo:
         return False, f"Arquivo do QBO inválido. Colunas ausentes: {', '.join(missing_qbo)}"
     return True, None
-
-# --- 3. CENÁRIO DEMO DE DIAGNÓSTICO ---
 
 def generate_canonical_demo_data():
     stripe_rows = []
@@ -395,13 +396,11 @@ def generate_canonical_demo_data():
     clean_stripe = pd.DataFrame([{k: v for k, v in r.items() if not k.endswith('_dec') and k != 'date'} for r in stripe_rows])
     return clean_stripe, pd.DataFrame(qbo_corrupted)
 
-# --- 4. MOTOR DIAGNÓSTICO DE RECONCILIAÇÃO ---
-
 def run_forensic_reconciliation(stripe_df, qbo_df):
     if 'currency' in stripe_df.columns:
-        currencies = stripe_df['currency'].dropna().str.lower().unique()
+        currencies = [c for c in stripe_df['currency'].dropna().str.upper().unique() if c]
         if len(currencies) > 1:
-            return None
+            return {"multi_currency_error": True, "currencies_found": currencies}
 
     parser = ForensicParser()
     detections = []
@@ -462,7 +461,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
 
     quarantined_payout_exposure = {}
 
-    # 1. Payouts (com suporte a Payouts a Débito/Negativos)
     payout_events = [r for r in s_valid if r['type'] == 'payout']
     for p in payout_events:
         pid = p['payout_id']
@@ -538,7 +536,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                         "descricao": f"Payout {pid} initiated on {p_date} but posted to bank on {m['date']} (+{delay} dias)."
                     })
 
-    # 2. Taxas por lote liquidado
     payout_ids = sorted(list(set(r['payout_id'] for r in s_valid if r['payout_id'] and r['payout_id'] != "unsettled")))
     unbooked_payout_fees = {}
 
@@ -576,7 +573,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Taxas Stripe de ${fee_amt:,.2f} for batch {pid} unrecorded in general ledger."
                 })
 
-    # 2.1 Reconciliação de taxas unsettled / provisionadas
     unsettled_fees = abs(sum(r['fee'] for r in s_valid if (not r.get('payout_id') or r.get('payout_id') == "unsettled") and r.get('type') != 'payout'))
     if unsettled_fees > Decimal("0.00"):
         unsettled_matches = [
@@ -601,7 +597,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 "descricao": f"Taxas Stripe de ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) unrecorded in general ledger."
             })
 
-    # 3. Reembolsos
     for r in [x for x in s_valid if x['type'] == 'refund']:
         tx_id = r['id']
         expected_ref = abs(r['gross'])
@@ -623,7 +618,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Reembolso {tx_id} registrado com valor divergente."
                 })
 
-    # 4. Ajustes
     for a in [x for x in s_valid if x['type'] == 'adjustment']:
         tx_id = a['id']
         expected_adj = abs(a['net'])
@@ -645,7 +639,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Ajuste {tx_id} com divergência de valor."
                 })
 
-    # 5. Disputas
     for d_row in [x for x in s_valid if x['type'] == 'dispute']:
         tx_id = d_row['id']
         expected_disp = abs(d_row['gross'])
@@ -686,7 +679,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Disputa {tx_id} in the amount of ${expected_disp:,.2f} retida na Stripe mas sem lançamento no QBO."
                 })
 
-    # 6. Cobranças
     for ch in [x for x in s_valid if x['type'] == 'charge']:
         ch_id = ch['id']
         expected_gross = ch['gross']
@@ -702,7 +694,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Venda {ch_id} registrada como ${s_m['debit']:,.2f} (esperado: ${expected_gross:,.2f})."
                 })
 
-    # 7. Órfãos
     unmatched_qbo = [q for q in q_valid if not q['reconciled']]
     for u in unmatched_qbo:
         u_val = u['debit'] if u['debit'] > Decimal("0.00") else u['credit']
@@ -713,7 +704,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             "descricao": f"Lançamento no razão sem lastro na Stripe ({u['num']}: {u['type']} - {u['memo']})."
         })
 
-    # Fechamento Contábil de 4 Estados
     net_explained = Decimal("0.00")
     for d_item in detections:
         if d_item['status'] == "CONFIRMED":
@@ -723,10 +713,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             elif d_item['sinal'] == "-":
                 net_explained -= mag
 
-    # 1. Saldo Líquido Observado no QBO
     total_qbo_net = sum(r['debit'] - r['credit'] for r in q_valid)
-
-    # 2. Saldo Líquido Esperado na Stripe (Fonte da Verdade Primária)
     total_stripe_net = sum(Decimal(str(x.get('net', Decimal('0.00')))) for x in s_valid)
 
     quarantined_exposure = Decimal("0.00")
@@ -740,12 +727,22 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 raw = q_item.get("raw_record", {})
                 c_str = str(raw.get("Credit", raw.get("credit", "0"))).replace("$", "").replace(",", "").strip()
                 d_str = str(raw.get("Debit", raw.get("debit", "0"))).replace("$", "").replace(",", "").strip()
+                
+                c_val = Decimal("0.00")
+                d_val = Decimal("0.00")
                 try:
-                    c_val = Decimal(c_str)
-                    d_val = Decimal(d_str)
-                    quarantined_exposure += (c_val - d_val)
+                    if c_str:
+                        c_val = Decimal(c_str).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 except (InvalidOperation, ValueError):
-                    pass
+                    c_val = Decimal("0.00")
+                    
+                try:
+                    if d_str:
+                        d_val = Decimal(d_str).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                except (InvalidOperation, ValueError):
+                    d_val = Decimal("0.00")
+                    
+                quarantined_exposure += (c_val - d_val)
 
         for d_item in detections:
             if d_item["categoria"] == "Dados em Quarentena":
@@ -753,17 +750,22 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 d_item["descricao"] = f"Payout {d_item['documento']} com linha corrompida isolada em quarentena no razão. Exposição nominal líquida de ${quarantined_exposure:,.2f}."
 
     delta_b = total_qbo_net - total_stripe_net
-    unexplained_residual = (delta_b - net_explained) - quarantined_exposure
-
-    if abs(unexplained_residual) < Decimal("0.01"):
+    
+    try:
+        unexplained_residual = (delta_b - net_explained) - quarantined_exposure
+        if abs(unexplained_residual) < Decimal("0.01"):
+            unexplained_residual = Decimal("0.00")
+    except (InvalidOperation, TypeError):
         unexplained_residual = Decimal("0.00")
-
-    if unexplained_residual == Decimal("0.00"):
-        audit_status = "INCONCLUSIVE" if len(parser.quarantine) > 0 else "CLEAN"
+        audit_status = "INCONCLUSIVE"
     else:
-        audit_status = "UNEXPLAINED"
+        if unexplained_residual == Decimal("0.00"):
+            audit_status = "INCONCLUSIVE" if len(parser.quarantine) > 0 else "CLEAN"
+        else:
+            audit_status = "UNEXPLAINED"
 
     return {
+        "multi_currency_error": False,
         "detections": detections,
         "quarantined": parser.quarantine,
         "quarantined_exposure": quarantined_exposure,
@@ -777,8 +779,6 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
         "residual": unexplained_residual,
         "audit_status": audit_status
     }
-
-# --- 5. BANCADA CIENTÍFICA ---
 
 def build_chronological_universe(seed=42):
     rng = random.Random(seed)
@@ -1204,10 +1204,7 @@ def evaluate_bipartite_forensic_metrics(detections, ground_truth):
         "missed_value": float(total_gt_val - confirmed_strict_delta)
     }
 
-# --- 6. CAMADA DE INTERFACE (ENCAPSULADA) ---
-
 def run_app():
-    
     st.title("Stripe × QuickBooks Online")
     st.subheader("Forensic Reconciliation")
     st.caption("Find and explain ledger discrepancies before month-end close.")
@@ -1218,6 +1215,7 @@ def run_app():
     else:
         tab_app = st.container()
         tab_lab = None
+
     with tab_app:
         if "stripe_data" not in st.session_state:
             st.session_state["stripe_data"] = None
@@ -1228,7 +1226,6 @@ def run_app():
         if "audit_authorized" not in st.session_state:
             st.session_state["audit_authorized"] = False
 
-        # --- PORTÃO DE ENTRADA, CONTROLE DE ACESSO & ISENÇÃO JURÍDICA ---
         st.markdown("### 0. Audit Setup")
         
         col_em1, col_em2 = st.columns([2, 1])
@@ -1236,10 +1233,10 @@ def run_app():
             user_email = st.text_input(
                 "Work Email (for audit trail and report logging):",
                 placeholder="controller@company.com",
-                help="Complimentary tier includes 2 full ledger reconciliation audits per month."
+                help="Beta tier includes 3 full ledger reconciliation audits per month."
             )
         with col_em2:
-            st.caption("🔒 Free tier: 2 audits / month")
+            st.caption("🔒 Free tier: 3 audits / month")
         
         st.markdown('''
         > ⚖️ **Notice of Advisory Scope & Professional Review:**  
@@ -1256,9 +1253,30 @@ def run_app():
         st.divider()
         
         st.subheader("1. Ledger Data Ingestion")
-        uploaded_stripe = st.file_uploader("Stripe Balance History CSV (Standard Export)", type=["csv"], key="stripe_uploader")
-        uploaded_qbo = st.file_uploader("QuickBooks Online Stripe Clearing Ledger CSV", type=["csv"], key="qbo_uploader")
-        st.caption("🔒 **No Persistent File Storage:** Uploaded CSV files are processed in memory and are not intentionally stored in databases or persistent file storage.")
+        
+        uploaded_stripe = st.file_uploader(
+            "Stripe Balance History CSV", 
+            type=["csv"], 
+            key="stripe_uploader",
+            max_upload_size=25
+        )
+        st.caption("📍 **Export path:** Dashboard → Balance → All transactions → Export → Format: *Standard balance history*")
+        
+        uploaded_qbo = st.file_uploader(
+            "QuickBooks Online Stripe Clearing Ledger CSV", 
+            type=["csv"], 
+            key="qbo_uploader",
+            max_upload_size=25
+        )
+        st.caption("📍 **Export path:** Accounting → Chart of Accounts → [Clearing Account] → View Register → Export to CSV")
+        
+        st.caption("🔒 Uploaded files are processed in memory and are not intentionally stored in persistent application storage.")
+        
+        MAX_BYTES = 25 * 1024 * 1024
+        for name, up_file in [("Stripe", uploaded_stripe), ("QuickBooks Online", uploaded_qbo)]:
+            if up_file is not None and up_file.size > MAX_BYTES:
+                st.error(f"⚠️ {name} file exceeds the 25 MB limit. Please split the export or select a shorter period.")
+                st.stop()
                 
         if st.button("Load Canonical Audit Benchmark (Demo Dataset)", key="btn_load_canonical"):
             s_mock, q_mock = generate_canonical_demo_data()
@@ -1296,16 +1314,20 @@ def run_app():
             if not is_demo and not st.session_state["audit_authorized"]:
                 st.markdown("---")
                 st.subheader("2. Autenticação e Cota de Uso")
-                st.caption("Você possui até 2 auditorias gratuitas por mês com arquivos reais.")
+                st.caption("Você possui até 3 auditorias gratuitas por mês com arquivos reais durante o Beta.")
                 
                 col_auth, _ = st.columns([2, 3])
                 with col_auth:
-                    user_email = st.text_input("Seu e-mail corporativo para processar a auditoria:", key="auth_user_email")
-                    if st.button("Autorizar Execução da Auditoria", type="primary"):
-                        if not user_email:
+                    auth_email = st.text_input("Seu e-mail corporativo para processar a auditoria:", value=user_email, key="auth_user_email")
+                    
+                    if not terms_accepted:
+                        st.info("ℹ️ Aceite os termos de revisão profissional acima para habilitar a execução da auditoria.")
+                    
+                    if st.button("Autorizar Execução da Auditoria", type="primary", disabled=not terms_accepted):
+                        if not auth_email:
                             st.warning("Por favor, insira um e-mail válido para iniciar.")
                         else:
-                            allowed, count, msg = check_and_increment_usage(user_email)
+                            allowed, count, msg = check_and_increment_usage(auth_email)
                             if not allowed:
                                 st.error(msg)
                             else:
@@ -1315,6 +1337,15 @@ def run_app():
 
             if st.session_state["audit_authorized"]:
                 res = run_forensic_reconciliation(s_active, q_active)
+
+                if res and res.get("multi_currency_error"):
+                    st.warning(
+                        f"⚠️ **Multiple currencies detected**\n\n"
+                        f"This audit currently supports single-currency reconciliation only.\n\n"
+                        f"**Currencies found:** {', '.join(res['currencies_found'])}\n\n"
+                        f"Please run separate audits filtered by currency."
+                    )
+                    st.stop()
 
                 if res:
                     if res["quarantined"]:
@@ -1350,7 +1381,11 @@ def run_app():
 
                     st.markdown("---")
                     st.subheader("5. Adjusting Journal Entries & CPA Workpapers")
-                    st.info("⚠️ **Professional Review Required:** The following entries are evidence-based diagnostic recommendations generated from your uploaded records. Review and approve them with your qualified accounting professional before posting into QuickBooks Online.")
+                    st.warning(
+                        "⚠️ **Professional Review Required**\n\n"
+                        "These recommendations are generated from the uploaded records and are provided for diagnostic purposes. "
+                        "Review and approve them with your qualified accounting professional before posting into QuickBooks Online."
+                    )
                     st.info("💡 Export certified workpapers to post adjusting journal entries directly into QuickBooks Online:")
                     
                     col_cta, _ = st.columns([2, 3])
