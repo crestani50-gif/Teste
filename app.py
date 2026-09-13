@@ -166,10 +166,13 @@ class ForensicParser:
         self.quarantined_tokens = set()
 
     def parse_currency(self, val, row_id, field_name, context_memo="", raw_record=None):
-        if pd.isna(val) or val == "" or val is None:
+        if pd.isna(val) or val is None:
+            return Decimal("0.00")
+        s_raw = str(val).strip()
+        if s_raw == "" or s_raw.lower() in ("nan", "none"):
             return Decimal("0.00")
         
-        s = str(val).strip().replace("$", "").replace(",", "").strip()
+        s = s_raw.replace("$", "").replace(",", "").strip()
         if s.startswith("(") and s.endswith(")"):
             s = "-" + s[1:-1].strip()
             
@@ -1291,6 +1294,10 @@ def run_app():
                 q_raw = robust_read_csv(uploaded_qbo)
                 valid, msg = validate_schemas(s_raw, q_raw)
                 if valid:
+                    # Se trocou de arquivo ou está subindo arquivo real, exige autorização por e-mail
+                    if st.session_state.get("is_demo", False) or st.session_state.get("uploaded_previously") != (uploaded_stripe.name, uploaded_qbo.name):
+                        st.session_state["audit_authorized"] = False
+                    st.session_state["uploaded_previously"] = (uploaded_stripe.name, uploaded_qbo.name)
                     st.session_state["stripe_data"] = s_raw
                     st.session_state["qbo_data"] = q_raw
                     st.session_state["is_demo"] = False
