@@ -536,7 +536,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                         "descricao": f"Payout {pid} initiated on {p_date} but posted to bank on {m['date']} (+{delay} dias)."
                     })
 
-    payout_ids = sorted(list(set(r['payout_id'] for r in s_valid if r['payout_id'] and r['payout_id'] != "unsettled")))
+    payout_ids = sorted(list(set(str(r['payout_id']).strip() for r in s_valid if r.get('payout_id') and str(r['payout_id']).lower() not in ("nan", "none", "unsettled"))))
     unbooked_payout_fees = {}
 
     for pid in payout_ids:
@@ -694,7 +694,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Venda {ch_id} registrada como ${s_m['debit']:,.2f} (esperado: ${expected_gross:,.2f})."
                 })
 
-    unmatched_qbo = [q for q in q_valid if not q['reconciled']]
+    unmatched_qbo = [q for q in q_valid if not q['reconciled'] and (q['debit'] > Decimal("0.00") or q['credit'] > Decimal("0.00")) and str(q['num']).lower() != "nan"]
     for u in unmatched_qbo:
         u_val = u['debit'] if u['debit'] > Decimal("0.00") else u['credit']
         u_sign = "+" if u['debit'] > Decimal("0.00") else "-"
@@ -725,9 +725,10 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 quarantined_exposure += matched[0]
             else:
                 raw = q_item.get("raw_record", {})
-                c_str = str(raw.get("Credit", raw.get("credit", "0"))).replace("$", "").replace(",", "").strip()
-                d_str = str(raw.get("Debit", raw.get("debit", "0"))).replace("$", "").replace(",", "").strip()
-                
+                c_raw = str(raw.get("Credit", raw.get("credit", "0")))
+                d_raw = str(raw.get("Debit", raw.get("debit", "0")))
+                c_str = "" if c_raw.lower() in ("nan", "none") else c_raw.replace("$", "").replace(",", "").strip()
+                d_str = "" if d_raw.lower() in ("nan", "none") else d_raw.replace("$", "").replace(",", "").strip()
                 c_val = Decimal("0.00")
                 d_val = Decimal("0.00")
                 try:
@@ -735,13 +736,11 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                         c_val = Decimal(c_str).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 except (InvalidOperation, ValueError):
                     c_val = Decimal("0.00")
-                    
                 try:
                     if d_str:
                         d_val = Decimal(d_str).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 except (InvalidOperation, ValueError):
                     d_val = Decimal("0.00")
-                    
                 quarantined_exposure += (c_val - d_val)
 
         for d_item in detections:
