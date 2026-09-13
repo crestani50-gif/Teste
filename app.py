@@ -15,8 +15,12 @@ import streamlit as st
 try:
     from usage_guard import check_and_increment_usage
 except ImportError:
-    def check_and_increment_usage(email: str):
-        return True, 1, "Auditoria liberada (modo sem persistência de cotas)."
+    import os
+    def check_and_increment_usage(email: str, increment: bool = True):
+        is_dev = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+        if is_dev:
+            return True, 1, "Auditoria liberada (modo DEV sem persistência de cotas)."
+        return False, 0, "Usage control service unavailable. Please try again later or contact support."
 
 st.set_page_config(
     page_title="Forensic Ledger Reconciliation | Stripe to QBO",
@@ -1359,7 +1363,7 @@ def run_app():
         )
         st.caption("📍 **Export path:** Accounting → Chart of Accounts → [Clearing Account] → View Register → Export to CSV")
         
-        st.caption("🔒 Uploaded files are processed in memory and are not intentionally stored in persistent application storage.")
+        st.caption("🔒 Uploaded financial files are processed in memory and are not intentionally stored in persistent application storage.")
         
         MAX_BYTES = 25 * 1024 * 1024
         for name, up_file in [("Stripe", uploaded_stripe), ("QuickBooks Online", uploaded_qbo)]:
@@ -1421,13 +1425,14 @@ def run_app():
                         if not auth_email or "@" not in auth_email:
                             st.warning("Please enter a valid work email address.")
                         else:
-                            allowed, count, msg = check_and_increment_usage(auth_email)
+                            # Pre-check de cota SEM incrementar ainda
+                            allowed, count, msg = check_and_increment_usage(auth_email, increment=False)
                             if not allowed:
                                 st.error(msg)
                             else:
-                                st.success(msg)
                                 st.session_state["audit_authorized"] = True
                                 st.session_state["authorized_email"] = auth_email
+                                st.session_state["quota_incremented"] = False
                                 st.rerun()
 
             if st.session_state["audit_authorized"]:
@@ -1441,6 +1446,13 @@ def run_app():
                         f"Please run separate audits filtered by currency."
                     )
                     st.stop()
+
+                # Consumo efetivo de cota somente apos a reconciliacao ser realizada com sucesso
+                if not is_demo and not st.session_state.get("quota_incremented", False):
+                    req_email = st.session_state.get("authorized_email", "")
+                    if req_email:
+                        check_and_increment_usage(req_email, increment=True)
+                        st.session_state["quota_incremented"] = True
 
                 if res:
                     if res["quarantined"]:
@@ -1481,12 +1493,12 @@ def run_app():
                         "These recommendations are generated from the uploaded records and are provided for diagnostic purposes. "
                         "Review and approve them with your qualified accounting professional before posting into QuickBooks Online."
                     )
-                    st.info("💡 Export diagnostic workpapers to post adjusting journal entries directly into QuickBooks Online:")
+                    st.info("💡 Export diagnostic workpapers for review and posting in QuickBooks Online:")
                     
                     col_cta, _ = st.columns([2, 3])
                     with col_cta:
                         reviewer_email = st.session_state.get("authorized_email") or ("demo_auditor@sample.com" if st.session_state.get("is_demo") else "controller@company.com")
-                        st.caption(f"Signed Audit Trail Reviewer: **{reviewer_email}**")
+                        st.caption(f"Audit Run Requester: **{reviewer_email}**")
                         
                         pkg_csv = generate_cpa_workpaper_csv(res, reviewer_email)
                         st.download_button(

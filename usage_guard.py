@@ -8,7 +8,7 @@ UNLIMITED_USERS = [
     "crestani50@gmail.com"
 ]
 
-def check_and_increment_usage(email: str, db_path: str = "audit_usage.json"):
+def check_and_increment_usage(email: str, db_path: str = "audit_usage.json", increment: bool = True):
     """
     Validates and increments monthly usage quota.
     Default: 3 audits/month in Beta. Unlimited for administrators.
@@ -42,6 +42,12 @@ def check_and_increment_usage(email: str, db_path: str = "audit_usage.json"):
 
     if current_count >= MAX_AUDITS_PER_MONTH:
         return False, current_count, f"You have reached the monthly limit of {MAX_AUDITS_PER_MONTH} audits for {current_month}. Contact enterprise support for unlimited access."
+
+    if not increment:
+        return True, current_count, f"Authorized. Current monthly usage: {current_count}/{MAX_AUDITS_PER_MONTH}"
+
+    if not increment:
+        return True, current_count, f"Authorized. Current monthly usage: {current_count}/{MAX_AUDITS_PER_MONTH}"
 
     usage[clean_email][current_month] = current_count + 1
 
