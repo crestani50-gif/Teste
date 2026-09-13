@@ -7,3 +7,4 @@ dirty_stripe_raw.csv
 dirty_qbo_raw.csv
 testes_sujos.zip
 .streamlit/secrets.toml
+__pycache__/
