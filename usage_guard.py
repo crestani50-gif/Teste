@@ -1,53 +1,54 @@
 import json
 import os
 from datetime import datetime
-from typing import Tuple
 
-STORAGE_FILE = "usage_ledger.json"
-FREE_MONTHLY_LIMIT = 2
+MAX_AUDITS_PER_MONTH = 3
+UNLIMITED_USERS = [
+    "xcrestani@hotmail.com",
+    "crestani50@gmail.com"
+]
 
-def _load_ledger() -> dict:
-    if not os.path.exists(STORAGE_FILE):
-        return {}
+def check_and_increment_usage(email: str, db_path: str = "audit_usage.json"):
+    """
+    Validates and increments monthly usage quota.
+    Default: 3 audits/month in Beta. Unlimited for administrators.
+    """
+    if not email or not isinstance(email, str):
+        return False, 0, "A valid email address is required."
+
+    clean_email = email.strip().lower()
+
+    # Checagem de acesso ilimitado / Admin
+    for admin_pattern in UNLIMITED_USERS:
+        if admin_pattern.lower() in clean_email:
+            return True, 0, "Authorized (Unlimited Admin Access Tier)."
+
+    current_month = datetime.now().strftime("%Y-%m")
+    usage = {}
+
+    if os.path.exists(db_path):
+        try:
+            with open(db_path, "r", encoding="utf-8") as f:
+                usage = json.load(f)
+        except Exception:
+            usage = {}
+
+    if clean_email not in usage:
+        usage[clean_email] = {}
+    if current_month not in usage[clean_email]:
+        usage[clean_email][current_month] = 0
+
+    current_count = usage[clean_email][current_month]
+
+    if current_count >= MAX_AUDITS_PER_MONTH:
+        return False, current_count, f"You have reached the monthly limit of {MAX_AUDITS_PER_MONTH} audits for {current_month}. Contact enterprise support for unlimited access."
+
+    usage[clean_email][current_month] = current_count + 1
+
     try:
-        with open(STORAGE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def _save_ledger(ledger: dict) -> None:
-    try:
-        with open(STORAGE_FILE, "w", encoding="utf-8") as f:
-            json.dump(ledger, f, indent=2)
+        with open(db_path, "w", encoding="utf-8") as f:
+            json.dump(usage, f, indent=2)
     except Exception:
         pass
 
-def check_and_increment_usage(email: str) -> Tuple[bool, int, str]:
-    """
-    Verifica cota mensal e consome 1 crédito se disponível.
-    Retorna: (autorizado, saldo_usado, mensagem)
-    """
-    clean_email = email.strip().lower()
-    if "@" not in clean_email or "." not in clean_email:
-        return False, 0, "Por favor, insira um e-mail corporativo válido."
-
-    ledger = _load_ledger()
-    current_period = datetime.now().strftime("%Y-%m")
-    
-    user_record = ledger.get(clean_email, {})
-    period_count = user_record.get(current_period, 0)
-
-    if period_count >= FREE_MONTHLY_LIMIT:
-        return False, period_count, (
-            f"Você atingiu o limite gratuito de {FREE_MONTHLY_LIMIT} auditorias neste mês ({current_period}). "
-            "Entre em contato para auditorias ilimitadas."
-        )
-
-    # Incrementa uso
-    user_record[current_period] = period_count + 1
-    user_record["last_seen"] = datetime.now().isoformat()
-    ledger[clean_email] = user_record
-    _save_ledger(ledger)
-
-    remaining = FREE_MONTHLY_LIMIT - (period_count + 1)
-    return True, period_count + 1, f"Auditoria autorizada. Você possui {remaining} análise(s) gratuita(s) restante(s) este mês."
+    return True, usage[clean_email][current_month], f"Audit authorized. Monthly usage: {usage[clean_email][current_month]}/{MAX_AUDITS_PER_MONTH}"

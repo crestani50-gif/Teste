@@ -539,7 +539,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                         "descricao": f"Payout {pid} initiated on {p_date} but posted to bank on {m['date']} (+{delay} dias)."
                     })
 
-    payout_ids = sorted(list(set(str(r['payout_id']).strip() for r in s_valid if r.get('payout_id') and str(r['payout_id']).lower() not in ("nan", "none", "unsettled"))))
+    payout_ids = sorted(list(set(r['payout_id'] for r in s_valid if r.get('payout_id') and str(r['payout_id']).lower() not in ('nan', 'none', 'unsettled', ''))))
     unbooked_payout_fees = {}
 
     for pid in payout_ids:
@@ -697,7 +697,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                     "descricao": f"Venda {ch_id} registrada como ${s_m['debit']:,.2f} (esperado: ${expected_gross:,.2f})."
                 })
 
-    unmatched_qbo = [q for q in q_valid if not q['reconciled'] and (q['debit'] > Decimal("0.00") or q['credit'] > Decimal("0.00")) and str(q['num']).lower() != "nan"]
+    unmatched_qbo = [q for q in q_valid if not q['reconciled'] and (q['debit'] > Decimal("0.00") or q['credit'] > Decimal("0.00"))]
     for u in unmatched_qbo:
         u_val = u['debit'] if u['debit'] > Decimal("0.00") else u['credit']
         u_sign = "+" if u['debit'] > Decimal("0.00") else "-"
@@ -962,7 +962,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
             if "Taxas Stripe consolidadas po_week_2" in row['Memo/Description']:
                 rem = qbo_corrupted.pop(i)
                 ground_truth.append({
-                    "anomaly_id": "FEE_A2", "target_id": "Fees po_week_2",
+                    "anomaly_id": "FEE_A2", "target_id": "Taxas po_week_2",
                     "category": "Unrecorded Stripe Processing Fees",
                     "delta": Decimal(rem['Credit']),
                     "exposure": Decimal("0.00")
