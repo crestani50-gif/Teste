@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 import sys
 import os
 import re
@@ -7,7 +7,7 @@ import csv
 import random
 import urllib.request
 import json
-from datetime import date, datetime, timedelta
+from datetime import datetime, timezone, date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import pandas as pd
 import streamlit as st
@@ -73,11 +73,6 @@ def match_exact_token(text, token):
     return bool(re.search(pattern, str(text), re.IGNORECASE))
 
 def robust_read_csv(file_or_path):
-    """
-    Leitura forense de CSV que captura linhas estruturalmente corrompidas
-    em vez de descarta-las silenciosamente (eliminando falsos CLEAN).
-    Suporta buffers binarios, strings e caminhos de arquivo.
-    """
     raw_data = file_or_path.read() if hasattr(file_or_path, "read") else open(file_or_path, "rb").read()
     if hasattr(file_or_path, "seek"):
         file_or_path.seek(0)
@@ -95,20 +90,38 @@ def robust_read_csv(file_or_path):
     else:
         text_content = str(raw_data)
 
-    # Deteccao de delimitador
-    sample = text_content[:2048]
-    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    content_lines = text_content.splitlines()
+    if not content_lines:
+        df = pd.DataFrame()
+        df.attrs["structural_bad_lines"] = []
+        return df
 
+    sample_lines = [l for l in content_lines[:15] if l.strip()]
+    sample_text = chr(10).join(sample_lines)
+    delimiter = ";" if sample_text.count(";") > sample_text.count(",") else ","
+
+    candidate_keywords = [
+        "balance_transaction_id", "gross", "net", "fee", "payout", "payout_id",
+        "date", "transaction type", "type", "description", "memo", "amount", "debit", "credit", "num"
+    ]
+    header_idx = 0
+    for idx, line in enumerate(content_lines[:20]):
+        low = line.lower()
+        matches = sum(1 for kw in candidate_keywords if kw in low)
+        if matches >= 2:
+            header_idx = idx
+            break
+
+    body_text = chr(10).join(content_lines[header_idx:])
     bad_lines_captured = []
 
     def bad_line_handler(bad_line):
         bad_lines_captured.append(bad_line)
         return None
 
-    sio = io.StringIO(text_content)
     try:
         df = pd.read_csv(
-            sio,
+            io.StringIO(body_text),
             sep=delimiter,
             dtype=str,
             engine="python",
@@ -118,13 +131,12 @@ def robust_read_csv(file_or_path):
         df = pd.DataFrame()
         bad_lines_captured.append([str(e)])
 
-    # Metadado forense anexado ao DataFrame para consumo da camada de quarentena
     df.attrs["structural_bad_lines"] = bad_lines_captured
     return df
 
 def save_lead(email):
     persisted = False
-    timestamp = datetime.now(datetime.timezone.utc if hasattr(datetime, 'timezone') else None).isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     record = str(timestamp) + " | " + str(email).strip() + "\n"
 
     webhook_url = None
@@ -411,9 +423,13 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
     for df_source, label in [(stripe_df, "Stripe"), (qbo_df, "QBO")]:
         for bad_line in getattr(df_source, "attrs", {}).get("structural_bad_lines", []):
             parser.quarantine.append({
+                "row_id": "RAW_CSV_SYNTAX",
                 "source": label,
-                "motivo_erro": "STRUCTURAL_CSV_SYNTAX_ERROR: Malformed CSV row rejected by parser engine",
+                "field": "file_syntax",
+                "error": "STRUCTURAL_CSV_SYNTAX_ERROR: Malformed CSV row rejected by parser engine",
+                "memo": str(bad_line)[:120],
                 "raw_record": {"raw_malformed_line": str(bad_line)},
+                "motivo_erro": "STRUCTURAL_CSV_SYNTAX_ERROR",
                 "campo_afetado": "file_syntax"
             })
     detections = []
@@ -1220,7 +1236,7 @@ def generate_cpa_workpaper_csv(audit_res, reviewer_email):
     output = io.StringIO()
     writer = csv.writer(output)
     
-    timestamp = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     writer.writerow(["# DIAGNOSTIC CPA FORENSIC WORKPAPERS (UNAUDITED) - ADJUSTING JOURNAL ENTRIES (AJE)"])
     writer.writerow([f"# Timestamp: {timestamp}"])
     writer.writerow([f"# Reviewer / Controller: {reviewer_email}"])
