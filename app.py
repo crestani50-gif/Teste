@@ -1309,20 +1309,20 @@ def run_app():
         if s_active is not None and q_active is not None:
             if not is_demo and not st.session_state["audit_authorized"]:
                 st.markdown("---")
-                st.subheader("2. Autenticação e Cota de Uso")
-                st.caption("Você possui até 3 auditorias gratuitas por mês com arquivos reais durante o Beta.")
+                st.subheader("2. Authentication & Usage Quota")
+                st.caption("Beta tier includes up to 3 complimentary ledger audits per month with production files.")
                 
                 col_auth, _ = st.columns([2, 3])
                 with col_auth:
-                    auth_email = st.text_input("Work Email corporativo para auditoria e cota:", placeholder="controller@company.com", key="auth_user_email")
+                    auth_email = st.text_input("Work Email (for audit trail and quota verification):", placeholder="controller@company.com", key="auth_user_email")
                     
                     if not terms_accepted:
-                        st.info("ℹ️ Marque o checkbox dos termos na Seção 0 para habilitar a execução.")
+                        st.info("ℹ️ Please accept the terms in Section 0 to enable execution.")
                     
-                    btn_auth = st.button("Autorizar Execução da Auditoria", type="primary", disabled=not terms_accepted)
+                    btn_auth = st.button("Authorize Audit Execution", type="primary", disabled=not terms_accepted)
                     if btn_auth:
                         if not auth_email or "@" not in auth_email:
-                            st.warning("Por favor, insira um e-mail corporativo válido.")
+                            st.warning("Please enter a valid work email address.")
                         else:
                             allowed, count, msg = check_and_increment_usage(auth_email)
                             if not allowed:
@@ -1347,8 +1347,8 @@ def run_app():
 
                 if res:
                     if res["quarantined"]:
-                        st.warning(f"⚠ **Qualidade dos Dados:** {len(res['quarantined'])} linha(s) continham valores corrompidos e foram isoladas sob incerteza técnica.")
-                        with st.expander("Ver detalhes dos registros em quarentena"):
+                        st.warning(f"⚠ **Qualidade dos Dados:** {len(res['quarantined'])} row(s) contained corrupted values and were isolated under technical uncertainty.")
+                        with st.expander("View quarantined exception records"):
                             st.dataframe(pd.DataFrame(res["quarantined"]), use_container_width=True)
 
                     st.markdown("---")
@@ -1360,11 +1360,11 @@ def run_app():
                     m4.metric("Unaccounted Residual Variance", f"${res['unexplained_residual']:,.2f}")
 
                     if res['audit_status'] == "CLEAN":
-                        st.success("✅ **Reconciliation Status:** Saldo integralmente conciliado e fechado sem resíduos.")
+                        st.success("✅ **Reconciliation Status:** Ledger fully reconciled and closed with zero unexplained residual variance.")
                     elif res['audit_status'] == "INCONCLUSIVE":
-                        st.info("ℹ️ **Reconciliation Status:** Saldo fechado matematicamente, mas parecer condicionado à auditoria manual dos itens em quarentena.")
+                        st.info("ℹ️ **Reconciliation Status:** Ledger tied mathematically, but opinion is conditioned on manual audit of quarantined exceptions.")
                     else:
-                        st.error("⚠️ **Reconciliation Status:** Existem diferenças sem explicação que demandam auditoria de lançamentos não identificados.")
+                        st.error("⚠️ **Reconciliation Status:** Unexplained variances identified requiring further audit of unmapped transactions.")
 
                     st.markdown("---")
                     st.subheader(f"4. Itemized Forensic Discrepancies ({len(res['detections'])} itens)")
