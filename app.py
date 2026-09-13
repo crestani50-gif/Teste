@@ -1206,6 +1206,73 @@ def evaluate_bipartite_forensic_metrics(detections, ground_truth):
         "missed_value": float(total_gt_val - confirmed_strict_delta)
     }
 
+def generate_cpa_workpaper_csv(audit_res, reviewer_email):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    timestamp = datetime.now(datetime.timezone.utc if hasattr(datetime, "timezone") else None).strftime("%Y-%m-%d %H:%M:%S UTC")
+    writer.writerow(["# CPA FORENSIC WORKPAPERS - ADJUSTING JOURNAL ENTRIES (AJE)"])
+    writer.writerow([f"# Timestamp: {timestamp}"])
+    writer.writerow([f"# Reviewer / Controller: {reviewer_email}"])
+    writer.writerow([f"# Audit Status: {audit_res.get('audit_status', 'UNKNOWN')}"])
+    writer.writerow([f"# Unreconciled QBO Balance: ${audit_res.get('qbo_balance', Decimal('0.00')):,.2f}"])
+    writer.writerow([f"# Confirmed Adjustments: ${audit_res.get('confirmed_discrepancies', Decimal('0.00')):,.2f}"])
+    writer.writerow([f"# Quarantined Exposure: ${audit_res.get('quarantined_exposure', Decimal('0.00')):,.2f}"])
+    writer.writerow([f"# Residual Variance: ${audit_res.get('unexplained_residual', Decimal('0.00')):,.2f}"])
+    writer.writerow([])
+    
+    writer.writerow([
+        "Entry_Number", "Date", "Account_Name", "Debit", "Credit", 
+        "Description_Memo", "Entity_Ref", "Source_Category"
+    ])
+    
+    entry_seq = 1
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    
+    for d in audit_res.get("detections", []):
+        if d.get("status") != "CONFIRMED":
+            continue
+            
+        cat = d.get("categoria", "")
+        doc = d.get("documento", "")
+        mag = abs(Decimal(str(d.get("impacto", "0.00"))))
+        
+        if mag == Decimal("0.00"):
+            continue
+            
+        memo = f"Forensic AJE: {cat} ({doc})"
+        
+        if "Unrecorded Stripe Processing Fees" in cat or "Taxas" in cat:
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Payment Processing Fees Expense", f"{mag:.2f}", "0.00", memo, doc, cat])
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", "0.00", f"{mag:.2f}", memo, doc, cat])
+            entry_seq += 1
+        elif "Omitted Refund Entry" in cat or "Refund" in cat:
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Returns & Allowances Expense", f"{mag:.2f}", "0.00", memo, doc, cat])
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", "0.00", f"{mag:.2f}", memo, doc, cat])
+            entry_seq += 1
+        elif "Stripe Balance Adjustment" in cat:
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Merchant Dispute & Loss Expense", f"{mag:.2f}", "0.00", memo, doc, cat])
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", "0.00", f"{mag:.2f}", memo, doc, cat])
+            entry_seq += 1
+        elif "Sign Inversion Error" in cat:
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Suspense / Clearing Variance", f"{mag:.2f}", "0.00", memo, doc, cat])
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", "0.00", f"{mag:.2f}", memo, doc, cat])
+            entry_seq += 1
+        elif "Duplicate Payout Entry" in cat:
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", f"{mag:.2f}", "0.00", f"Reversal of Duplicate Payout {doc}", doc, cat])
+            writer.writerow([f"AJE-{entry_seq}", today_str, "Operating Bank Account", "0.00", f"{mag:.2f}", f"Reversal of Duplicate Payout {doc}", doc, cat])
+            entry_seq += 1
+        elif "Posting Discrepancy" in cat:
+            if d.get("sinal") == "-":
+                writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", f"{mag:.2f}", "0.00", memo, doc, cat])
+                writer.writerow([f"AJE-{entry_seq}", today_str, "Reconciliation Variance", "0.00", f"{mag:.2f}", memo, doc, cat])
+            else:
+                writer.writerow([f"AJE-{entry_seq}", today_str, "Reconciliation Variance", f"{mag:.2f}", "0.00", memo, doc, cat])
+                writer.writerow([f"AJE-{entry_seq}", today_str, "Stripe Clearing Account", "0.00", f"{mag:.2f}", memo, doc, cat])
+            entry_seq += 1
+            
+    return output.getvalue()
+
 def run_app():
     st.title("Stripe × QuickBooks Online")
     st.subheader("Forensic Reconciliation")
@@ -1388,15 +1455,17 @@ def run_app():
                     
                     col_cta, _ = st.columns([2, 3])
                     with col_cta:
-                        email_lead = st.text_input("Controller / Reviewer Email for Audit Trail:", key="lead_email_input")
-                        if st.button("Request Structured Audit Report"):
-                            if email_lead and "@" in email_lead and "." in email_lead:
-                                if save_lead(email_lead):
-                                    st.success("Request confirmed! The audit workpaper package has been generated.")
-                                else:
-                                    st.error("Temporary error recording audit request. Please retry.")
-                            else:
-                                st.warning("Por favor, insira um e-mail válido.")
+                        reviewer_email = st.session_state.get("authorized_email") or ("demo_auditor@sample.com" if st.session_state.get("is_demo") else "controller@company.com")
+                        st.caption(f"Signed Audit Trail Reviewer: **{reviewer_email}**")
+                        
+                        pkg_csv = generate_cpa_workpaper_csv(res, reviewer_email)
+                        st.download_button(
+                            label="📥 Download Certified CPA Workpapers (CSV)",
+                            data=pkg_csv,
+                            file_name=f"CPA_Workpapers_Stripe_QBO_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                            type="primary"
+                        )
 
     if show_lab and tab_lab is not None:
         with tab_lab:
