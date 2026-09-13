@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import sys
 import os
 import re
@@ -71,55 +72,54 @@ def match_exact_token(text, token):
     pattern = rf"(?<![a-zA-Z0-9_]){re.escape(str(token))}(?![a-zA-Z0-9_])"
     return bool(re.search(pattern, str(text), re.IGNORECASE))
 
-def robust_read_csv(uploaded_file):
-    bytes_data = uploaded_file.read()
-    uploaded_file.seek(0)
-    
-    encodings_to_try = ["utf-8-sig", "utf-8", "latin1", "cp1252"]
-    text_content = None
+def robust_read_csv(file_or_path):
+    """
+    Leitura forense de CSV que captura linhas estruturalmente corrompidas
+    em vez de descarta-las silenciosamente (eliminando falsos CLEAN).
+    Suporta buffers binarios, strings e caminhos de arquivo.
+    """
+    raw_data = file_or_path.read() if hasattr(file_or_path, "read") else open(file_or_path, "rb").read()
+    if hasattr(file_or_path, "seek"):
+        file_or_path.seek(0)
 
-    for enc in encodings_to_try:
-        try:
-            text_content = bytes_data.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-
-    if text_content is None:
-        raise ValueError("Não foi possível decodificar o arquivo. Formato incompatível.")
-
-    lines = text_content.splitlines()
-    if not lines:
-        return pd.DataFrame()
-
-    header_idx = 0
-    candidate_keywords = {'balance_transaction_id', 'date', 'num', 'memo/description', 'transaction type', 'gross'}
-    
-    for idx, line in enumerate(lines[:15]):
-        line_lower = line.lower()
-        matches = sum(1 for kw in candidate_keywords if kw in line_lower)
-        if matches >= 2:
-            header_idx = idx
-            break
-
-    content_to_parse = "\n".join(lines[header_idx:])
-    first_data_line = lines[header_idx] if len(lines) > header_idx else ""
-
-    if first_data_line.count(';') > first_data_line.count(','):
-        sep = ';'
-    elif '\t' in first_data_line:
-        sep = '\t'
+    if isinstance(raw_data, bytes):
+        detected_encoding = "utf-8"
+        for enc in ["utf-8-sig", "utf-8", "latin1", "cp1252"]:
+            try:
+                raw_data.decode(enc)
+                detected_encoding = enc
+                break
+            except UnicodeDecodeError:
+                continue
+        text_content = raw_data.decode(detected_encoding, errors="replace")
     else:
-        sep = ','
+        text_content = str(raw_data)
 
-    df = pd.read_csv(
-        io.StringIO(content_to_parse),
-        sep=sep,
-        dtype=str,
-        engine='python',
-        on_bad_lines='skip'
-    )
-    df.columns = [str(c).strip() for c in df.columns]
+    # Deteccao de delimitador
+    sample = text_content[:2048]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+
+    bad_lines_captured = []
+
+    def bad_line_handler(bad_line):
+        bad_lines_captured.append(bad_line)
+        return None
+
+    sio = io.StringIO(text_content)
+    try:
+        df = pd.read_csv(
+            sio,
+            sep=delimiter,
+            dtype=str,
+            engine="python",
+            on_bad_lines=bad_line_handler
+        )
+    except Exception as e:
+        df = pd.DataFrame()
+        bad_lines_captured.append([str(e)])
+
+    # Metadado forense anexado ao DataFrame para consumo da camada de quarentena
+    df.attrs["structural_bad_lines"] = bad_lines_captured
     return df
 
 def save_lead(email):
@@ -406,6 +406,16 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             return {"multi_currency_error": True, "currencies_found": currencies}
 
     parser = ForensicParser()
+
+    # Ingestao forense de linhas descartadas estruturalmente pelo parser de CSV
+    for df_source, label in [(stripe_df, "Stripe"), (qbo_df, "QBO")]:
+        for bad_line in getattr(df_source, "attrs", {}).get("structural_bad_lines", []):
+            parser.quarantine.append({
+                "source": label,
+                "motivo_erro": "STRUCTURAL_CSV_SYNTAX_ERROR: Malformed CSV row rejected by parser engine",
+                "raw_record": {"raw_malformed_line": str(bad_line)},
+                "campo_afetado": "file_syntax"
+            })
     detections = []
 
     stripe_data = []
@@ -1210,8 +1220,8 @@ def generate_cpa_workpaper_csv(audit_res, reviewer_email):
     output = io.StringIO()
     writer = csv.writer(output)
     
-    timestamp = datetime.now(datetime.timezone.utc if hasattr(datetime, "timezone") else None).strftime("%Y-%m-%d %H:%M:%S UTC")
-    writer.writerow(["# CPA FORENSIC WORKPAPERS - ADJUSTING JOURNAL ENTRIES (AJE)"])
+    timestamp = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    writer.writerow(["# DIAGNOSTIC CPA FORENSIC WORKPAPERS (UNAUDITED) - ADJUSTING JOURNAL ENTRIES (AJE)"])
     writer.writerow([f"# Timestamp: {timestamp}"])
     writer.writerow([f"# Reviewer / Controller: {reviewer_email}"])
     writer.writerow([f"# Audit Status: {audit_res.get('audit_status', 'UNKNOWN')}"])
@@ -1298,7 +1308,11 @@ def run_app():
         st.markdown("### 0. Audit Setup & Governance")
         
         st.markdown('''
-        > ⚖️ **Notice of Advisory Scope & Professional Review:**  
+        > ⚖️ **Notice of Advisory Scope & Professional Review:
+
+> **Architecture Notice — Supported Integration Scope:**
+> This deterministic reconciliation engine is engineered for general ledgers populated by automated connectors (such as **Acodei**, **Synder**, or the **Stripe App for QuickBooks**) and manual entries that preserve Stripe transaction or payout IDs (`po_...`, `ch_...`, `py_...`) within the transaction memo or reference field. Purely aggregate entries lacking transactional trace IDs require manual review.
+**  
         > This software is an assistive analytical tool designed to identify potential discrepancies, variances, and reconciliation issues between financial records.  
         > **Recommended Action — Subject to Professional Review:** Diagnostic findings and proposed adjusting journal entries are provided for informational and operational purposes only. They do not constitute tax, legal, accounting, audit, or other licensed professional advice.  
         > Users are responsible for reviewing and validating all findings and proposed adjustments with their qualified accounting or authorized financial professional before posting or relying on them. The software does not independently determine legal, tax, or accounting obligations and does not replace professional review.
@@ -1451,7 +1465,7 @@ def run_app():
                         "These recommendations are generated from the uploaded records and are provided for diagnostic purposes. "
                         "Review and approve them with your qualified accounting professional before posting into QuickBooks Online."
                     )
-                    st.info("💡 Export certified workpapers to post adjusting journal entries directly into QuickBooks Online:")
+                    st.info("💡 Export diagnostic workpapers to post adjusting journal entries directly into QuickBooks Online:")
                     
                     col_cta, _ = st.columns([2, 3])
                     with col_cta:
@@ -1460,7 +1474,7 @@ def run_app():
                         
                         pkg_csv = generate_cpa_workpaper_csv(res, reviewer_email)
                         st.download_button(
-                            label="📥 Download Certified CPA Workpapers (CSV)",
+                            label="📥 Export Diagnostic CPA Workpapers (CSV)",
                             data=pkg_csv,
                             file_name=f"CPA_Workpapers_Stripe_QBO_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                             mime="text/csv",
