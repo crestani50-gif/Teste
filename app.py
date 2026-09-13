@@ -7,7 +7,6 @@ import csv
 import random
 import urllib.request
 import json
-from datetime import datetime, timezone, date, timedelta
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import pandas as pd
 import streamlit as st
@@ -1324,15 +1323,16 @@ def run_app():
         st.markdown("### 0. Audit Setup & Governance")
         
         st.markdown('''
-        > ⚖️ **Notice of Advisory Scope & Professional Review:
-
-> **Architecture Notice — Supported Integration Scope:**
-> This deterministic reconciliation engine is engineered for general ledgers populated by automated connectors (such as **Acodei**, **Synder**, or the **Stripe App for QuickBooks**) and manual entries that preserve Stripe transaction or payout IDs (`po_...`, `ch_...`, `py_...`) within the transaction memo or reference field. Purely aggregate entries lacking transactional trace IDs require manual review.
-**  
-        > This software is an assistive analytical tool designed to identify potential discrepancies, variances, and reconciliation issues between financial records.  
-        > **Recommended Action — Subject to Professional Review:** Diagnostic findings and proposed adjusting journal entries are provided for informational and operational purposes only. They do not constitute tax, legal, accounting, audit, or other licensed professional advice.  
-        > Users are responsible for reviewing and validating all findings and proposed adjustments with their qualified accounting or authorized financial professional before posting or relying on them. The software does not independently determine legal, tax, or accounting obligations and does not replace professional review.
-        ''')
+> ⚖️ **Notice of Advisory Scope & Professional Review:**
+>
+> **Architecture Notice — Supported Integration Scope:** This deterministic reconciliation engine is engineered for general ledgers populated by automated connectors (such as **Acodei**, **Synder**, or the **Stripe App for QuickBooks**) and manual entries that preserve Stripe transaction or payout IDs (`po_...`, `ch_...`, `py_...`) within the transaction memo or reference field. Purely aggregate entries lacking transactional trace IDs require manual review.
+>
+> This software is an assistive analytical tool designed to identify potential discrepancies, variances, and reconciliation issues between financial records.
+>
+> **Recommended Action — Subject to Professional Review:** Diagnostic findings and proposed adjusting journal entries are provided for informational and operational purposes only. They do not constitute tax, legal, accounting, audit, or other licensed professional advice.
+>
+> Users are responsible for reviewing and validating all findings and proposed adjustments with their qualified accounting or authorized financial professional before posting or relying on them. The software does not independently determine legal, tax, or accounting obligations and does not replace professional review.
+''')
         
         terms_accepted = st.checkbox(
             "I understand that this tool provides assistive diagnostic analysis and that all findings and proposed adjustments require review by a qualified accounting professional before posting.",
