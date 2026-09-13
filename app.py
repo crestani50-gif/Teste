@@ -316,7 +316,7 @@ def generate_canonical_demo_data():
     for r in [x for x in stripe_rows if x['type'] == 'refund']:
         qbo_perfect.append({
             'Date': str(r['date']), 'Transaction Type': 'Refund Receipt', 'Num': f"REF-{doc_id}",
-            'Memo/Description': f"Reembolso {r['balance_transaction_id']}", 'Debit': "0.00", 'Credit': str(abs(r['gross_dec']))
+            'Memo/Description': f"Refund {r['balance_transaction_id']}", 'Debit': "0.00", 'Credit': str(abs(r['gross_dec']))
         })
         doc_id += 1
 
@@ -364,7 +364,7 @@ def generate_canonical_demo_data():
             break
 
     for i, row in enumerate(qbo_corrupted):
-        if "Reembolso pyr_100" in row['Memo/Description']:
+        if "Refund pyr_100" in row['Memo/Description']:
             qbo_corrupted.pop(i)
             break
 
@@ -573,7 +573,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 detections.append({
                     "categoria": "Unrecorded Stripe Processing Fees", "status": "CONFIRMED",
                     "documento": f"Taxas {pid}", "impacto": fee_amt, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Taxas Stripe de ${fee_amt:,.2f} for batch {pid} unrecorded in general ledger."
+                    "descricao": f"Stripe processing fees of ${fee_amt:,.2f} for batch {pid} unrecorded in general ledger."
                 })
 
     unsettled_fees = abs(sum(r['fee'] for r in s_valid if (not r.get('payout_id') or r.get('payout_id') == "unsettled") and r.get('type') != 'payout'))
@@ -597,7 +597,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             detections.append({
                 "categoria": "Unrecorded Stripe Processing Fees", "status": "CONFIRMED",
                 "documento": "Taxas unsettled", "impacto": unsettled_fees, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Taxas Stripe de ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) unrecorded in general ledger."
+                "descricao": f"Stripe processing fees of ${unsettled_fees:,.2f} pendentes de liquidação (unsettled) unrecorded in general ledger."
             })
 
     for r in [x for x in s_valid if x['type'] == 'refund']:
@@ -608,7 +608,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             detections.append({
                 "categoria": "Omitted Refund Entry", "status": "CONFIRMED",
                 "documento": tx_id, "impacto": expected_ref, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Reembolso {tx_id} in the amount of ${expected_ref:,.2f} missing from QBO ledger."
+                "descricao": f"Refund {tx_id} in the amount of ${expected_ref:,.2f} missing from QBO ledger."
             })
         else:
             m = matches[0]
@@ -616,9 +616,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             if m['credit'] != expected_ref:
                 diff_r = m['credit'] - expected_ref
                 detections.append({
-                    "categoria": "Reembolso Divergente", "status": "CONFIRMED",
+                    "categoria": "Refund Divergente", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": abs(diff_r), "exposure": Decimal("0.00"), "sinal": "-" if diff_r > 0 else "+",
-                    "descricao": f"Reembolso {tx_id} registrado com valor divergente."
+                    "descricao": f"Refund {tx_id} registrado com valor divergente."
                 })
 
     for a in [x for x in s_valid if x['type'] == 'adjustment']:
@@ -629,7 +629,7 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             detections.append({
                 "categoria": "Stripe Balance Adjustment", "status": "CONFIRMED",
                 "documento": tx_id, "impacto": expected_adj, "exposure": Decimal("0.00"), "sinal": "+",
-                "descricao": f"Ajuste interno da Stripe ({tx_id}) de -${expected_adj:,.2f} unposted to general ledger."
+                "descricao": f"Internal Stripe balance adjustment ({tx_id}) de -${expected_adj:,.2f} unposted to general ledger."
             })
         else:
             m = matches[0]
@@ -657,9 +657,9 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
             if m['credit'] != expected_disp:
                 diff_d = m['credit'] - expected_disp
                 detections.append({
-                    "categoria": "Disputa Divergente", "status": "CONFIRMED",
+                    "categoria": "Dispute Divergente", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": abs(diff_d), "exposure": Decimal("0.00"), "sinal": "-" if diff_d > 0 else "+",
-                    "descricao": f"Disputa {tx_id} registrada com valor divergente."
+                    "descricao": f"Dispute {tx_id} registrada com valor divergente."
                 })
         else:
             inverted_matches = [
@@ -673,13 +673,13 @@ def run_forensic_reconciliation(stripe_df, qbo_df):
                 detections.append({
                     "categoria": "Sign Inversion Error (Dr/Cr Flip)", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": impact, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Disputa {tx_id} posted with inverted sign (Debit of ${m['debit']:,.2f} instead of Credit)."
+                    "descricao": f"Dispute {tx_id} posted with inverted sign (Debit of ${m['debit']:,.2f} instead of Credit)."
                 })
             else:
                 detections.append({
-                    "categoria": "Disputa / Chargeback Não Escriturado", "status": "CONFIRMED",
+                    "categoria": "Dispute / Chargeback Não Escriturado", "status": "CONFIRMED",
                     "documento": tx_id, "impacto": expected_disp, "exposure": Decimal("0.00"), "sinal": "+",
-                    "descricao": f"Disputa {tx_id} in the amount of ${expected_disp:,.2f} retida na Stripe mas sem lançamento no QBO."
+                    "descricao": f"Dispute {tx_id} in the amount of ${expected_disp:,.2f} retida na Stripe mas sem lançamento no QBO."
                 })
 
     for ch in [x for x in s_valid if x['type'] == 'charge']:
@@ -881,7 +881,7 @@ def build_chronological_universe(seed=42):
     for e in [x for x in events if x['type'] == 'refund']:
         qbo_perfect.append({
             'Date': str(e['created_date']), 'Transaction Type': 'Refund Receipt', 'Num': f"REF-{doc_id}",
-            'Memo/Description': f"Reembolso {e['id']}", 'Debit': "0.00", 'Credit': str(abs(e['gross']))
+            'Memo/Description': f"Refund {e['id']}", 'Debit': "0.00", 'Credit': str(abs(e['gross']))
         })
         doc_id += 1
 
@@ -962,7 +962,7 @@ def inject_adversarial_suite(qbo_perfect, payout_dates, rng):
             if "Taxas Stripe consolidadas po_week_2" in row['Memo/Description']:
                 rem = qbo_corrupted.pop(i)
                 ground_truth.append({
-                    "anomaly_id": "FEE_A2", "target_id": "Taxas po_week_2",
+                    "anomaly_id": "FEE_A2", "target_id": "Fees po_week_2",
                     "category": "Unrecorded Stripe Processing Fees",
                     "delta": Decimal(rem['Credit']),
                     "exposure": Decimal("0.00")
@@ -1347,7 +1347,7 @@ def run_app():
 
                 if res:
                     if res["quarantined"]:
-                        st.warning(f"⚠ **Qualidade dos Dados:** {len(res['quarantined'])} row(s) contained corrupted values and were isolated under technical uncertainty.")
+                        st.warning(f"⚠ **Data Integrity Warning:** {len(res['quarantined'])} row(s) contained corrupted values and were isolated under technical uncertainty.")
                         with st.expander("View quarantined exception records"):
                             st.dataframe(pd.DataFrame(res["quarantined"]), use_container_width=True)
 
@@ -1367,7 +1367,7 @@ def run_app():
                         st.error("⚠️ **Reconciliation Status:** Unexplained variances identified requiring further audit of unmapped transactions.")
 
                     st.markdown("---")
-                    st.subheader(f"4. Itemized Forensic Discrepancies ({len(res['detections'])} itens)")
+                    st.subheader(f"4. Itemized Forensic Discrepancies ({len(res['detections'])} items)")
                     st.dataframe(pd.DataFrame([{
                         "Status": d_item["status"],
                         "Category": d_item["categoria"],
