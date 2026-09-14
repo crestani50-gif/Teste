@@ -1363,7 +1363,7 @@ def run_app():
 >
 > **Architecture Notice — Supported Integration Scope:** This deterministic reconciliation engine is engineered for general ledgers populated by automated connectors (such as **Acodei**, **Synder**, or the **Stripe App for QuickBooks**) and manual entries that preserve Stripe transaction or payout IDs (`po_...`, `ch_...`, `py_...`) within the transaction memo or reference field. Purely aggregate entries lacking transactional trace IDs require manual review.
 >
-> This software is an assistive analytical tool designed to identify potential discrepancies, variances, and reconciliation issues between financial records.
+> This software is an open-source assistive analytical tool provided "AS IS" under the MIT License, designed to identify potential discrepancies, variances, and reconciliation issues between financial records.
 >
 > **Recommended Action — Subject to Professional Review:** Diagnostic findings and proposed adjusting journal entries are provided for informational and operational purposes only. They do not constitute tax, legal, accounting, audit, or other licensed professional advice.
 >
