@@ -1451,7 +1451,12 @@ def run_app():
                 if not is_demo and not st.session_state.get("quota_incremented", False):
                     req_email = st.session_state.get("authorized_email", "")
                     if req_email:
-                        check_and_increment_usage(req_email, increment=True)
+                        allowed_inc, count, msg = check_and_increment_usage(req_email, increment=True)
+                        if not allowed_inc:
+                            st.session_state["audit_authorized"] = False
+                            st.session_state["quota_incremented"] = False
+                            st.error(msg)
+                            st.stop()
                         st.session_state["quota_incremented"] = True
 
                 if res:
