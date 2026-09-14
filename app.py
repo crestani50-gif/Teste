@@ -26,8 +26,29 @@ st.set_page_config(
     page_title="Forensic Ledger Reconciliation | Stripe to QBO",
     page_icon="⚖️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
+
+# --- Discord Community & Engineering Support ---
+discord_invite = os.environ.get("DISCORD_INVITE_URL")
+if not discord_invite:
+    try:
+        discord_invite = st.secrets.get("DISCORD_INVITE_URL", None)
+    except Exception:
+        pass
+
+with st.sidebar:
+    st.markdown("### Suporte & Engenharia")
+    st.markdown(
+        "Tem dúvidas sobre as divergências identificadas ou encontrou "
+        "um padrão contábil não mapeado no seu QBO?"
+    )
+    if discord_invite:
+        st.link_button("Entrar no Discord da Comunidade", discord_invite, use_container_width=True)
+    else:
+        st.caption("Comunidade: discord.gg/xaFQKhUrNq")
+    st.markdown("---")
+    st.caption("v0.1 • Processamento determinístico local em memória.")
 
 st.markdown('''
 <style>
@@ -154,7 +175,16 @@ def save_lead(email):
 
     if webhook_url:
         try:
-            payload = json.dumps({"email": email.strip(), "timestamp": timestamp, "source": "stripe_qbo_diagnostic"}).encode("utf-8")
+            clean_email = email.strip()
+            # Payload compativel com Discord Webhooks e endpoints genericos
+            if "discord.com/api/webhooks" in webhook_url:
+                body = {
+                    "content": f"🎯 **Novo Lead / Auditoria Solicitada**\n**Email:** `{clean_email}`\n**Data:** `{timestamp}`"
+                }
+            else:
+                body = {"email": clean_email, "timestamp": timestamp, "source": "stripe_qbo_diagnostic"}
+            
+            payload = json.dumps(body).encode("utf-8")
             req = urllib.request.Request(
                 webhook_url,
                 data=payload,
