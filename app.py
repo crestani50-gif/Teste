@@ -38,17 +38,17 @@ if not discord_invite:
         pass
 
 with st.sidebar:
-    st.markdown("### Suporte & Engenharia")
+    st.markdown("### Engineering & Support")
     st.markdown(
-        "Tem dúvidas sobre as divergências identificadas ou encontrou "
-        "um padrão contábil não mapeado no seu QBO?"
+        "Questions regarding reconciled variance, unmapped clearing patterns, "
+        "or quarantine exceptions in your QuickBooks ledger?"
     )
     if discord_invite:
-        st.link_button("Entrar no Discord da Comunidade", discord_invite, use_container_width=True)
+        st.link_button("Join Discord Community", discord_invite, use_container_width=True)
     else:
-        st.caption("Comunidade: discord.gg/xaFQKhUrNq")
+        st.caption("Community: discord.gg/xaFQKhUrNq")
     st.markdown("---")
-    st.caption("v0.1 • Processamento determinístico local em memória.")
+    st.caption("v0.1 • In-memory deterministic processing.")
 
 st.markdown('''
 <style>
