@@ -23,7 +23,7 @@ except ImportError:
         return False, 0, "Usage control service unavailable. Please try again later or contact support."
 
 st.set_page_config(
-    page_title="⚖️ Forensic Ledger Reconciliation | Stripe to QBO",
+    page_title="Forensic Ledger Reconciliation | Stripe to QBO",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
