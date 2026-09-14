@@ -23,7 +23,7 @@ except ImportError:
         return False, 0, "Usage control service unavailable. Please try again later or contact support."
 
 st.set_page_config(
-    page_title="Forensic Ledger Reconciliation | Stripe to QBO",
+    page_title="⚖️ Forensic Ledger Reconciliation | Stripe to QBO",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1272,7 +1272,7 @@ def generate_cpa_workpaper_csv(audit_res, reviewer_email):
     writer = csv.writer(output)
     
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    writer.writerow(["# DIAGNOSTIC CPA FORENSIC WORKPAPERS (UNAUDITED) - ADJUSTING JOURNAL ENTRIES (AJE)"])
+    writer.writerow(["# DIAGNOSTIC CPA FORENSIC WORKPAPERS (UNAUDITED) - 📊 ADJUSTING JOURNAL ENTRIES (AJE)"])
     writer.writerow([f"# Timestamp: {timestamp}"])
     writer.writerow([f"# Reviewer / Controller: {reviewer_email}"])
     writer.writerow([f"# Audit Status: {audit_res.get('audit_status', 'UNKNOWN')}"])
@@ -1377,7 +1377,7 @@ def run_app():
         
         st.divider()
         
-        st.subheader("1. Ledger Data Ingestion")
+        st.subheader("📥 1. Ledger Data Ingestion")
         
         uploaded_stripe = st.file_uploader(
             "Stripe Balance History CSV", 
