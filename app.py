@@ -165,18 +165,19 @@ def save_lead(email):
 
     webhook_url = None
     try:
-        if "LEAD_WEBHOOK_URL" in st.secrets:
+        if hasattr(st, "secrets") and "LEAD_WEBHOOK_URL" in st.secrets:
             webhook_url = st.secrets["LEAD_WEBHOOK_URL"]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SAVE_LEAD DEBUG] Falha ao ler secrets: {e}", flush=True)
 
     if not webhook_url:
         webhook_url = os.environ.get("LEAD_WEBHOOK_URL", None)
 
+    print(f"[SAVE_LEAD DEBUG] Email: {email}, Webhook URL encontrada? {bool(webhook_url)}", flush=True)
+
     if webhook_url:
         try:
             clean_email = email.strip()
-            # Payload compativel com Discord Webhooks e endpoints genericos
             if "discord.com/api/webhooks" in webhook_url:
                 body = {
                     "content": f"🎯 **Novo Lead / Auditoria Solicitada**\n**Email:** `{clean_email}`\n**Data:** `{timestamp}`"
@@ -188,13 +189,14 @@ def save_lead(email):
             req = urllib.request.Request(
                 webhook_url,
                 data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             )
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                print(f"[SAVE_LEAD DEBUG] Resposta HTTP: {response.status}", flush=True)
                 if response.status in (200, 201, 202, 204):
                     persisted = True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[SAVE_LEAD DEBUG] Excecao no envio HTTP: {e}", flush=True)
 
     try:
         with open("leads_interessados.txt", "a", encoding="utf-8") as f_out:
