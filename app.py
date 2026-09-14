@@ -1356,7 +1356,7 @@ def run_app():
         if "audit_authorized" not in st.session_state:
             st.session_state["audit_authorized"] = False
 
-        st.markdown("### 📑0. Audit Setup & Governance")
+        st.markdown("### 📑 0. Audit Setup & Governance")
         
         st.markdown('''
 > ⚖️ **Notice of Advisory Scope & Professional Review:**
