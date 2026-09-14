@@ -1460,6 +1460,7 @@ def run_app():
                             if not allowed:
                                 st.error(msg)
                             else:
+                                save_lead(auth_email)
                                 st.session_state["audit_authorized"] = True
                                 st.session_state["authorized_email"] = auth_email
                                 st.session_state["quota_incremented"] = False
