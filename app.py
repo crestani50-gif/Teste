@@ -1619,3 +1619,10 @@ def run_app():
 
 if __name__ == "__main__" or os.environ.get("RUN_STREAMLIT") == "true":
     run_app()
+    # --- Footer / Legal Disclaimer ---
+st.markdown("---")
+st.caption(
+    "⚖️ **Legal Notice & Disclaimer:** This application is an analytical support tool provided 'AS IS' "
+    "under the MIT License. It does not provide formal accounting, tax, or legal advice. "
+    "All calculations run in volatile session memory; data is not stored or persisted."
+)
